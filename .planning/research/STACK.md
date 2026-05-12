@@ -55,17 +55,17 @@
 - ❌ Dramatiq — 社区小于 Celery，生态不如 Celery 成熟
 - ❌ asyncio.Task 替代 Celery — 进程重启会丢失任务，无持久化，不适合生产环境
 
-### Database — PostgreSQL
+### Database — MySQL
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| **PostgreSQL** | 16+ | 主数据库 | PROJECT.md 已确认；JSONB 字段适合存储 AI 标签/规则快照等半结构化数据；成熟稳定 |
-| **asyncpg** | latest | 异步 PostgreSQL 驱动 | 比 psycopg2 异步模式快 3-5 倍；FastAPI async 模式推荐搭配 |
-| **SQLAlchemy + asyncpg** | — | 异步 ORM 组合 | SQLAlchemy 2.0 + asyncpg 是 FastAPI 项目的标准异步数据库方案 |
+| **MySQL** | 16+ | 主数据库 | PROJECT.md 已确认；JSONB 字段适合存储 AI 标签/规则快照等半结构化数据；成熟稳定 |
+| **aiomysql** | latest | 异步 MySQL 驱动 | 比 psycopg2 异步模式快 3-5 倍；FastAPI async 模式推荐搭配 |
+| **SQLAlchemy + aiomysql** | — | 异步 ORM 组合 | SQLAlchemy 2.0 + aiomysql 是 FastAPI 项目的标准异步数据库方案 |
 
 **不要用什么：**
-- ❌ MySQL — JSONB 支持不如 PostgreSQL；本项目有大量半结构化数据（Prompt 快照、标签列表、规则版本）
-- ❌ MongoDB — 关系型数据（用户、任务、额度流水）用 RDBMS 更合适；MongoDB 在事务和一致性方面不如 PostgreSQL
+- ❌ MySQL — JSONB 支持不如 MySQL；本项目有大量半结构化数据（Prompt 快照、标签列表、规则版本）
+- ❌ MongoDB — 关系型数据（用户、任务、额度流水）用 RDBMS 更合适；MongoDB 在事务和一致性方面不如 MySQL
 - ❌ SQLite — 不支持并发写入，不适合生产环境
 
 ### Object Storage — OSS
@@ -150,7 +150,7 @@ tags = response.choices[0].message.content
 | 后端框架 | FastAPI | Flask | Flask 无原生 async 支持；处理并发外部 API 调用不如 FastAPI |
 | 任务队列 | Celery + Redis | Celery + RabbitMQ | Redis 同时做 broker + cache + result backend，减少运维组件 |
 | 任务队列 | Celery + Redis | Huey / Dramatiq | 社区小，生产案例少，遇到问题难以排查 |
-| 数据库 | PostgreSQL | MySQL | JSONB 支持差；本项目半结构化数据多 |
+| 数据库 | MySQL | MySQL | JSONB 支持差；本项目半结构化数据多 |
 | 对象存储 | 阿里云 OSS | 腾讯云 COS | 都可行；选 OSS 因为通用性更强，COS 适合全栈腾讯云场景 |
 | AI SDK | openai SDK | langchain | 本项目 AI 调用简单直接，不需要 langchain 的抽象 |
 | 图像处理 | Pillow | OpenCV | 水印叠加用 Pillow 够了，OpenCV 太重 |
@@ -237,7 +237,7 @@ npm install -D @types/node sass
 cd python-bff
 python -m venv .venv
 .venv\Scripts\activate   # Windows
-pip install fastapi uvicorn[standard] sqlalchemy[asyncio] asyncpg alembic
+pip install fastapi uvicorn[standard] sqlalchemy[asyncio] aiomysql alembic
 pip install celery[redis] redis[hiredis]
 pip install oss2 openai httpx
 pip install python-jose[cryptography] python-multipart python-dotenv
@@ -253,7 +253,7 @@ docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
 # 或 Windows: 使用 Memurai 或 WSL2
 `
 
-### PostgreSQL (development)
+### MySQL (development)
 `ash
 # Docker (推荐)
 docker run -d --name pg-dev -p 5432:5432 -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=xxzx postgres:16-alpine
@@ -283,8 +283,8 @@ Celery 完整覆盖这些需求。
 - **GPT-image-1**：支持图片编辑（image-to-image），更适合"基于实物图 + 参考风格生成"的业务场景
 - PROJECT.md 说"Codex / Gemini API"，实际对应 OpenAI 的 image gen 系列和 Google 的 Imagen
 
-### 4. 为什么 SQLAlchemy 而不是直接用 asyncpg？
-直接用 asyncpg 写 SQL 太原始，SQLAlchemy 2.0 的 async 模式：
+### 4. 为什么 SQLAlchemy 而不是直接用 aiomysql？
+直接用 aiomysql 写 SQL 太原始，SQLAlchemy 2.0 的 async 模式：
 - 提供 ORM 和 migration 工具链
 - 类型提示完善
 - 复杂查询（任务过滤、额度统计）写起来更简洁
@@ -297,4 +297,5 @@ Celery 完整覆盖这些需求。
 - 商品宣传图-产品与技术规格.md — 详细技术规格
 - AI_IMAGE_PIPELINE_CLARIFICATION.md — AI 流程说明
 - Confidence: HIGH for "已确认选型"（来自项目文档），MEDIUM for 具体版本号和库推荐（基于训练数据，需验证最新版本）
+
 

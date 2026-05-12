@@ -27,7 +27,7 @@ XX甄选 是一个微信小程序电商项目，核心卖点是 AI 生成商品�
 | 异步队列 | **Celery + Redis** | API 调用 10s+，必须后台异步执行 |
 | Vision API | **GPT-4o-mini**（默认，可切换） | 学习 Demo 图，生成描述性标签 |
 | Image Gen API | **Codex / Gemini API**（图片预处理暂不做） | 核心出图引擎 |
-| 数据库 | **PostgreSQL** | 存储任务状态、配置、用户数据 |
+| 数据库 | **MySQL** | 存储任务状态、配置、用户数据 |
 | 缓存/队列 | **Redis** | 任务队列 broker、缓存、会话 |
 | 对象存储 | **OSS** | 实物图、生成图、模板图存储 |
 
@@ -114,3 +114,4 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 *Last updated: 2026-05-12 after initialization*
+

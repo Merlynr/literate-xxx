@@ -1,23 +1,23 @@
 ﻿# Phase 1: Foundation & Infrastructure - Research
 
 **Researched:** 2026-05-12
-**Domain:** FastAPI scaffolding, PostgreSQL + Alembic, Celery + Redis, S3-compatible storage (MinIO), Uni-app WeChat Mini Program
+**Domain:** FastAPI scaffolding, MySQL + Alembic, Celery + Redis, S3-compatible storage (MinIO), Uni-app WeChat Mini Program
 **Confidence:** MEDIUM-HIGH
 
 ## Summary
 
-Phase 1 establishes the full technical backbone for XX甄选 — a WeChat Mini Program AIGC product image generation platform. The backend is a FastAPI BFF with PostgreSQL (via SQLAlchemy 2.0 async + asyncpg), Celery + Redis for async task processing, and MinIO for S3-compatible object storage. The frontend is a Uni-app Vue3+TypeScript project targeting mp-weixin. This phase delivers infrastructure-only: health checks, presigned URL scaffolding, Celery worker skeleton, and a functional Mini Program shell — no business logic.
+Phase 1 establishes the full technical backbone for XX甄选 — a WeChat Mini Program AIGC product image generation platform. The backend is a FastAPI BFF with MySQL (via SQLAlchemy 2.0 async + aiomysql), Celery + Redis for async task processing, and MinIO for S3-compatible object storage. The frontend is a Uni-app Vue3+TypeScript project targeting mp-weixin. This phase delivers infrastructure-only: health checks, presigned URL scaffolding, Celery worker skeleton, and a functional Mini Program shell — no business logic.
 
-Both `python-bff/` and `wx-fe/` directories exist but are empty. The environment has Python 3.10, Node.js, npm, but **no PostgreSQL, Redis, MinIO, or Docker installed** — these must be installed as part of Phase 1 planning. `uv` is not available; use `pip` for dependency management.
+Both `python-bff/` and `wx-fe/` directories exist but are empty. The environment has Python 3.10, Node.js, npm, but **no MySQL, Redis, MinIO, or Docker installed** — these must be installed as part of Phase 1 planning. `uv` is not available; use `pip` for dependency management.
 
-**Primary recommendation:** Scaffold `python-bff/` using an app-factory pattern with `pyproject.toml` (not `requirements.txt`), install PostgreSQL 16 + Redis 7 + MinIO via Windows installers or Chocolatey, and create the Uni-app project via `npx degit dcloudio/uni-preset-vue#vite-ts wx-fe`.
+**Primary recommendation:** Scaffold `python-bff/` using an app-factory pattern with `pyproject.toml` (not `requirements.txt`), install MySQL 16 + Redis 7 + MinIO via Windows installers or Chocolatey, and create the Uni-app project via `npx degit dcloudio/uni-preset-vue#vite-ts wx-fe`.
 
 <user_constraints>
 ## User Constraints (from CONTEXT.md)
 
 ### Locked Decisions
 - **D-01:** 按层分目录 (api/, services/, models/, schemas/, core/, workers/, providers/)
-- **D-02:** 本地直接安装 PostgreSQL + Redis，不用 Docker Compose
+- **D-02:** 本地直接安装 MySQL + Redis，不用 Docker Compose
 - **D-03:** Windows 上 Celery 使用 `--pool=threads` 开发
 - **D-04:** 生产环境必须是 Linux（Celery 5.x 不支持 Windows）
 - **D-05:** 开发阶段使用本地 MinIO 模拟 S3 兼容存储
@@ -43,7 +43,7 @@ Both `python-bff/` and `wx-fe/` directories exist but are empty. The environment
 
 | ID | Description | Research Support |
 |----|-------------|------------------|
-| INFRA-01 | 后端基础：FastAPI 骨架 + PostgreSQL Schema + Alembic 迁移 + ORM 模型 + 环境配置 | Standard Stack → FastAPI + SQLAlchemy 2.0 + asyncpg + Alembic + pydantic-settings; Architecture → app factory, async session, layer-based structure |
+| INFRA-01 | 后端基础：FastAPI 骨架 + MySQL Schema + Alembic 迁移 + ORM 模型 + 环境配置 | Standard Stack → FastAPI + SQLAlchemy 2.0 + aiomysql + Alembic + pydantic-settings; Architecture → app factory, async session, layer-based structure |
 | INFRA-02 | 异步任务基础设施：Redis broker + Celery worker 骨架 + 重试/超时配置 + 健康检查 | Standard Stack → Celery + Redis; Architecture → Celery app factory, task base class with retry/timeout, health check endpoint |
 | INFRA-03 | 对象存储：OSS bucket 配置 + 预签名上传/下载服务 | Standard Stack → boto3 + MinIO; Architecture → presigned URL generation, S3 abstraction layer |
 | INFRA-04 | 微信小程序项目脚手架 + 域名白名单注册 + 构建管线（mp-weixin 编译） | Standard Stack → Uni-app Vue3+Vite+TS+Pinia; Architecture → TabBar pages, build pipeline |
@@ -56,8 +56,8 @@ Both `python-bff/` and `wx-fe/` directories exist but are empty. The environment
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
 | **FastAPI** | 0.136.1 | BFF web framework | [VERIFIED: PyPI 2026-05-12] Async-native, auto OpenAPI docs |
-| **SQLAlchemy** | 2.0.49 | ORM | [VERIFIED: PyPI 2026-05-12] 2.0 async mode with asyncpg driver |
-| **asyncpg** | 0.31.0 | PostgreSQL async driver | [VERIFIED: PyPI 2026-05-12] 3-5x faster than psycopg2 for async |
+| **SQLAlchemy** | 2.0.49 | ORM | [VERIFIED: PyPI 2026-05-12] 2.0 async mode with aiomysql driver |
+| **aiomysql** | 0.31.0 | MySQL async driver | [VERIFIED: PyPI 2026-05-12] 3-5x faster than psycopg2 for async |
 | **Alembic** | 1.18.4 | DB migrations | [VERIFIED: PyPI 2026-05-12] SQLAlchemy-standard migration tool |
 | **pydantic-settings** | 2.14.1 | Env config management | [VERIFIED: PyPI 2026-05-12] Pydantic v2 native Settings for .env |
 | **uvicorn** | 0.46.0 | ASGI server | [VERIFIED: PyPI 2026-05-12] FastAPI-recommended ASGI server |
@@ -91,7 +91,7 @@ cd python-bff
 python -m venv .venv
 .venv\Scripts\activate
 pip install "fastapi>=0.136,<0.137" "uvicorn[standard]>=0.46,<0.47" python-multipart
-pip install "sqlalchemy[asyncio]>=2.0.49,<2.1" asyncpg alembic
+pip install "sqlalchemy[asyncio]>=2.0.49,<2.1" aiomysql alembic
 pip install "pydantic-settings>=2.14,<2.15"
 pip install "celery[redis]>=5.6,<5.7" "redis>=7.4,<7.5"
 pip install boto3 pillow loguru tenacity httpx python-jose[cryptography]
@@ -116,7 +116,7 @@ npm install -D @types/node
 
 | Service | Windows Install Method | Default Port |
 |---------|----------------------|--------------|
-| **PostgreSQL 16** | [EnterpriseDB installer](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads) or `choco install postgresql16` | 5432 |
+| **MySQL 16** | [EnterpriseDB installer](https://www.enterprisedb.com/downloads/postgres-MySQL-downloads) or `choco install MySQL16` | 5432 |
 | **Redis 7** | [Memurai](https://www.memurai.com/) or `choco install redis-64` or WSL2 | 6379 |
 | **MinIO** | [MinIO binary](https://min.io/download) → `minio.exe server ./data` | 9000 (API), 9001 (Console) |
 
@@ -249,7 +249,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 ```
 
-**Critical:** Must use `create_async_engine` with `postgresql+asyncpg://` driver. Sync driver blocks event loop.
+**Critical:** Must use `create_async_engine` with `MySQL+aiomysql://` driver. Sync driver blocks event loop.
 
 ### Pattern 3: pydantic-settings Configuration
 
@@ -265,7 +265,7 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
-    DATABASE_URL: str  # postgresql+asyncpg://user:pass@localhost:5432/xxzx
+    DATABASE_URL: str  # MySQL+aiomysql://user:pass@localhost:5432/xxzx
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
@@ -374,7 +374,7 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 ### Anti-Patterns to Avoid
 
 - **Module-level `app = FastAPI()`**: Use app factory for testability.
-- **Sync DB driver (psycopg2)**: Must use asyncpg with create_async_engine.
+- **Sync DB driver (psycopg2)**: Must use aiomysql with create_async_engine.
 - **Hardcoded S3 credentials**: All config via Settings → env vars (D-07).
 - **requirements.txt**: Use pyproject.toml with pinned versions.
 - **`--pool=prefork` on Windows**: Must use `--pool=threads` (D-03).
@@ -394,9 +394,9 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 
 ## Common Pitfalls
 
-### Pitfall 1: SQLAlchemy Async URL Must Use postgresql+asyncpg://
-**What goes wrong:** Using postgresql:// with create_async_engine raises NoSuchModuleError or silently blocks event loop.
-**How to avoid:** Always `postgresql+asyncpg://` prefix. Validate at startup.
+### Pitfall 1: SQLAlchemy Async URL Must Use MySQL+aiomysql://
+**What goes wrong:** Using MySQL:// with create_async_engine raises NoSuchModuleError or silently blocks event loop.
+**How to avoid:** Always `MySQL+aiomysql://` prefix. Validate at startup.
 
 ### Pitfall 2: Celery Tasks Cannot Be async def
 **What goes wrong:** Defining `async def` Celery tasks — Celery does not run coroutines natively.
@@ -431,13 +431,13 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 | Node.js | Frontend build | ✓ | 11.13.0 | ⚠️ May need upgrade to 16+ |
 | npm | Frontend packages | ✓ | 20.20.2 | — |
 | uv | Fast package mgr | ✗ | — | Use pip |
-| PostgreSQL | Database | ✗ | — | Must install |
+| MySQL | Database | ✗ | — | Must install |
 | Redis | Cache/broker | ✗ | — | Must install |
 | MinIO | Object storage | ✗ | — | Must install |
 | Docker | Containerization | ✗ | — | Not needed (D-02) |
 
 **Missing dependencies with no fallback:**
-- **PostgreSQL** — Must install before backend work. Blocker for INFRA-01.
+- **MySQL** — Must install before backend work. Blocker for INFRA-01.
 - **Redis** — Must install before Celery starts. Blocker for INFRA-02.
 - **MinIO** — Must install before presigned URL testing. Blocker for INFRA-03.
 
@@ -483,7 +483,7 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
 | requirements.txt | pyproject.toml (PEP 621) | ~2023 | Single source of truth, supports tool configs |
-| psycopg2 (sync) | asyncpg (async) | SQLAlchemy 2.0 (2023) | Non-blocking DB in async frameworks |
+| psycopg2 (sync) | aiomysql (async) | SQLAlchemy 2.0 (2023) | Non-blocking DB in async frameworks |
 | Celery() global import | Factory with conf.update() | Best practice evolution | Testable, configurable per env |
 | os.getenv() | pydantic-settings.BaseSettings | Pydantic v2 (2023) | Type safety, validation, .env auto-load |
 | oss2 (Aliyun SDK) | boto3 (S3 protocol) | 2025+ ecosystem | Vendor-agnostic, MinIO/AWS/Qiniu compatible |
@@ -496,7 +496,7 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 | A1 | `dcloudio/uni-preset-vue#vite-ts` branch exists | Standard Stack — Frontend | If missing, need manual TS setup after #vite clone |
 | A2 | Python 3.10.0 compatible with all recommended libs | Standard Stack | All verified versions support 3.10+ |
 | A3 | Node.js 11.13.0 is sufficient for Uni-app Vite | Environment | Likely INSUFFICIENT — Vite requires Node 16+ |
-| A4 | PostgreSQL 16 available via Chocolatey or direct download | Environment | Chocolatey may not be installed; direct download works |
+| A4 | MySQL 16 available via Chocolatey or direct download | Environment | Chocolatey may not be installed; direct download works |
 | A5 | Redis for Windows available as Memurai or redis-64 | Environment | Memurai free tier works for dev |
 | A6 | MinIO binary runs standalone on Windows without Docker | Environment | Official docs confirm Windows binary available |
 
@@ -507,7 +507,7 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
    - What's unclear: Uni-app Vite template works with Node 11 (unlikely — Vite requires 16+)
    - Recommendation: Upgrade Node.js to 18 LTS or 20 LTS before frontend work.
 
-2. **PostgreSQL/Redis/MinIO installation approach**
+2. **MySQL/Redis/MinIO installation approach**
    - What we know: D-02 says local install, no Docker. None currently installed.
    - What's unclear: Whether Chocolatey is available, user preference for GUI vs CLI installers
    - Recommendation: Include installation steps with multiple methods (Chocolatey if available, direct download fallback).
@@ -553,4 +553,5 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 
 **Research date:** 2026-05-12
 **Valid until:** 2026-06-12 (30 days — stable stack)
+
 

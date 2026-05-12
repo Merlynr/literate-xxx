@@ -93,7 +93,7 @@ Categories:
 
 | REQ-ID | Requirement | Priority | Phase |
 |--------|-------------|----------|-------|
-| INFRA-01 | 后端基础：FastAPI 骨架 + PostgreSQL Schema + Alembic 迁移 + ORM 模型 + 环境配置 | Must | Phase 1 |
+| INFRA-01 | 后端基础：FastAPI 骨架 + MySQL Schema + Alembic 迁移 + ORM 模型 + 环境配置 | Must | Phase 1 |
 | INFRA-02 | 异步任务基础设施：Redis broker + Celery worker 骨架 + 重试/超时配置 + 健康检查 | Must | Phase 1 |
 | INFRA-03 | 对象存储：OSS bucket 配置 + 预签名上传/下载服务 | Must | Phase 1 |
 | INFRA-04 | 微信小程序项目脚手架 + 域名白名单注册 + 构建管线（mp-weixin 编译） | Must | Phase 1 |
@@ -143,3 +143,4 @@ Categories:
 
 ---
 *Total: 35 v1 requirements across 8 categories*
+
