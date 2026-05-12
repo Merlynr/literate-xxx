@@ -1,30 +1,41 @@
-<template>
+﻿<template>
   <view class="page-my">
     <view class="header">
       <view class="avatar-placeholder">
         <text>👤</text>
       </view>
-      <text class="username">未登录</text>
+      <view v-if="userStore.isLoggedIn" class="user-info">
+        <text class="username">{{ userStore.nickname || '未设置昵称' }}</text>
+        <text class="tenant-id">租户: {{ userStore.tenantId.substring(0, 8) }}...</text>
+      </view>
+      <text v-else class="username">未登录</text>
     </view>
     <view class="menu">
       <view class="menu-item">
         <text>我的作品</text>
-        <text class="arrow">›</text>
+        <text class="arrow">→</text>
       </view>
       <view class="menu-item">
         <text>额度明细</text>
-        <text class="arrow">›</text>
+        <text class="arrow">→</text>
       </view>
       <view class="menu-item">
         <text>关于我们</text>
-        <text class="arrow">›</text>
+        <text class="arrow">→</text>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-// Profile page - Phase 2 will add WeChat login, Phase 4 will add works/credits
+import { onMounted } from 'vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+
+onMounted(async () => {
+  await userStore.ensureAuth()
+})
 </script>
 
 <style scoped>
@@ -48,10 +59,19 @@
   justify-content: center;
   font-size: 48rpx;
 }
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
 .username {
   font-size: 32rpx;
   color: #fff;
   font-weight: 500;
+}
+.tenant-id {
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 8rpx;
 }
 .menu {
   margin-top: 24rpx;

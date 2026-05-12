@@ -1,7 +1,7 @@
-<template>
+﻿<template>
   <view class="page-generate">
     <view class="coming-soon">
-      <text class="icon">🎨</text>
+      <text class="icon">🚀</text>
       <text class="title">AI生成向导</text>
       <text class="desc">选择类目 → 选择风格 → 上传照片 → 生成宣传图</text>
       <text class="hint">Phase 3 将实现完整向导流程</text>
@@ -10,7 +10,14 @@
 </template>
 
 <script setup lang="ts">
-// Generation wizard - Phase 3 will implement full flow
+import { onMounted } from 'vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+
+onMounted(async () => {
+  await userStore.ensureAuth()
+})
 </script>
 
 <style scoped>

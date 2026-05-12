@@ -1,8 +1,9 @@
-/**
+﻿/**
  * HTTP request wrapper for XX甄选 BFF API.
  *
  * Uses uni.request for WeChat Mini Program compatibility.
  * Base URL configured per environment.
+ * Includes 401 interceptor for silent token refresh.
  */
 
 interface RequestOptions {
@@ -10,6 +11,7 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   data?: Record<string, unknown> | unknown
   header?: Record<string, string>
+  _retry?: boolean  // internal flag to prevent infinite retry loop
 }
 
 interface ApiResponse<T = unknown> {
@@ -28,6 +30,21 @@ export function setToken(token: string) {
   authToken = token
 }
 
+/** Lazy import to avoid circular dependency */
+async function tryRefreshAndRetry<T>(options: RequestOptions): Promise<ApiResponse<T>> {
+  // Dynamically import the store
+  const { useUserStore } = await import('../stores/user')
+  const userStore = useUserStore()
+  const refreshed = await userStore.tryRefreshToken()
+  if (refreshed) {
+    // Retry original request with new token
+    return request<T>({ ...options, _retry: true })
+  }
+  // Refresh failed — redirect to login
+  uni.showToast({ title: '请重新登录', icon: 'none' })
+  return Promise.reject(new Error('Token refresh failed'))
+}
+
 export function request<T = unknown>(options: RequestOptions): Promise<ApiResponse<T>> {
   return new Promise((resolve, reject) => {
     const header: Record<string, string> = {
@@ -44,9 +61,17 @@ export function request<T = unknown>(options: RequestOptions): Promise<ApiRespon
       method: options.method || 'GET',
       data: options.data,
       header,
-      success: (res) => {
+      success: async (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data as ApiResponse<T>)
+        } else if (res.statusCode === 401 && !options._retry) {
+          // Attempt silent refresh
+          try {
+            const result = await tryRefreshAndRetry<T>(options)
+            resolve(result)
+          } catch (e) {
+            reject(e)
+          }
         } else if (res.statusCode === 401) {
           uni.showToast({ title: '请重新登录', icon: 'none' })
           reject(new Error('Unauthorized'))
