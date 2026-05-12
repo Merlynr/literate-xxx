@@ -5,7 +5,7 @@ from app.api.v1.tasks import router as tasks_router
 from app.api.v1.auth import router as auth_router
 
 router = APIRouter()
-router.include_router(health_router, tags=["health"])
-router.include_router(auth_router, tags=["auth"])
-router.include_router(uploads_router, tags=["uploads"])
-router.include_router(tasks_router, tags=["tasks"])
+router.include_router(health_router)
+router.include_router(auth_router)
+router.include_router(uploads_router)
+router.include_router(tasks_router)
