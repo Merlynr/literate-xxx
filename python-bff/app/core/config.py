@@ -1,4 +1,4 @@
-from __future__ import annotations
+Ôªøfrom __future__ import annotations
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    PROJECT_NAME: str = "XX’Á—° BFF"
+    PROJECT_NAME: str = "XX BFF"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
