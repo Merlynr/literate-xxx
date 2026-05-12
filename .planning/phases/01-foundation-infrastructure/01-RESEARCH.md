@@ -266,12 +266,12 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
     DATABASE_URL: str  # MySQL+aiomysql://user:pass@localhost:5432/xxzx
-    REDIS_URL: str = "redis://localhost:6379/0"
-    CELERY_BROKER_URL: str = "redis://localhost:6379/1"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
-    S3_ENDPOINT: str = "http://localhost:9000"
-    S3_ACCESS_KEY: str = "minioadmin"
-    S3_SECRET_KEY: str = "minioadmin"
+    REDIS_URL: str = "redis://192.168.10.88:6379/0"
+    CELERY_BROKER_URL: str = "redis://192.168.10.88:6379/1"
+    CELERY_RESULT_BACKEND: str = "redis://192.168.10.88:6379/2"
+    S3_ENDPOINT: str = "http://192.168.10.88:9000"
+    S3_ACCESS_KEY: str = "admin"
+    S3_SECRET_KEY: str = "admin"
     S3_BUCKET: str = "xxzx-assets"
     S3_REGION: str = ""
     S3_USE_SSL: bool = False
@@ -553,5 +553,6 @@ def generate_presigned_download_url(key: str, expires_in: int = 3600) -> str:
 
 **Research date:** 2026-05-12
 **Valid until:** 2026-06-12 (30 days — stable stack)
+
 
 
