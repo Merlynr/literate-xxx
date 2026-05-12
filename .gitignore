@@ -1,0 +1,26 @@
+# Python
+python-bff/.venv/
+python-bff/__pycache__/
+python-bff/**/__pycache__/
+python-bff/*.pyc
+python-bff/.env
+python-bff/alembic/versions/*.py
+python-bff/.pytest_cache/
+python-bff/*.egg-info/
+python-bff/dist/
+python-bff/build/
+
+# Node
+wx-fe/node_modules/
+wx-fe/dist/
+wx-fe/.hbuilderx/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
