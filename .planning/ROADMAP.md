@@ -23,7 +23,7 @@ XX甄选 delivers AI-generated product promotional images via a WeChat Mini Prog
   2. Developer can hit a health-check endpoint on the FastAPI BFF and get a 200 response (skeleton running with PostgreSQL connected)
   3. A file can be uploaded to OSS via a presigned URL and downloaded back (upload/download round-trip verified)
   4. A test Celery task can be dispatched via API and its result retrieved (Redis broker + worker pipeline functional)
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
@@ -41,7 +41,7 @@ Plans:
   3. Authenticated user can fetch available categories and styles for selection (returns tenant-scoped data)
   4. Requests from tenant A cannot access tenant B's data (tenant isolation enforced on all queries)
   5. When WeChat session expires, the frontend silently re-authenticates without disrupting the user
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
@@ -76,7 +76,7 @@ Plans:
   3. User can complete the full wizard: login → select category → select style → upload photos → confirm → view progress → preview result → save to album
   4. User can browse past generations in "My Works" list with pull-to-refresh
   5. First-time user must accept privacy agreement before creating a generation task (agreement state persists)
-**Plans**: TBD
+**Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
@@ -111,4 +111,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. AI Generation Pipeline | 0/3 | Not started | - |
 | 4. Quota, Billing & Frontend UX | 0/3 | Not started | - |
 | 5. Hardening & Launch Prep | 0/2 | Not started | - |
+
+
+
+
 
