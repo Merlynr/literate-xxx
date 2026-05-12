@@ -27,9 +27,9 @@ XX甄选 delivers AI-generated product promotional images via a WeChat Mini Prog
 **UI hint**: yes
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md — FastAPI BFF skeleton (PostgreSQL + Alembic + health check)
+- [ ] 01-02-PLAN.md — Celery/Redis tasks + MinIO/boto3 presigned URLs
+- [ ] 01-03-PLAN.md — Uni-app scaffold (Vue3+Vite+TS + 3 TabBar pages)
 
 ### Phase 2: Auth, Data Layer & Admin CRUD
 **Goal**: Users can authenticate via WeChat, admins can configure all product data (categories, styles, terms, rules), and the data layer provides the foundation for the AI generation pipeline.
@@ -111,3 +111,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. AI Generation Pipeline | 0/3 | Not started | - |
 | 4. Quota, Billing & Frontend UX | 0/3 | Not started | - |
 | 5. Hardening & Launch Prep | 0/2 | Not started | - |
+
