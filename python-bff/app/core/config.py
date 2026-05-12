@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    PROJECT_NAME: str = "XXç”„é€‰ BFF"
+    PROJECT_NAME: str = "XXÕçÑ¡ BFF"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     S3_BUCKET: str = "xxzx-assets"
     S3_REGION: str = "us-east-1"
     S3_USE_SSL: bool = False
+
+    # JWT
+    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    JWT_ALGORITHM: str = "HS256"
+
+    # WeChat Mini Program
+    WX_APP_ID: str = ""
+    WX_APP_SECRET: str = ""
 
 
 settings = Settings()
