@@ -1,10 +1,10 @@
-# Python
+﻿# Python
 python-bff/.venv/
 python-bff/__pycache__/
 python-bff/**/__pycache__/
 python-bff/*.pyc
 python-bff/.env
-python-bff/alembic/versions/*.py
+
 python-bff/.pytest_cache/
 python-bff/*.egg-info/
 python-bff/dist/
