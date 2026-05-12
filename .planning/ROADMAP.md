@@ -7,7 +7,7 @@ XX甄选 delivers AI-generated product promotional images via a WeChat Mini Prog
 ## Phases
 
 - [ ] **Phase 1: Foundation & Infrastructure** - Backend skeleton, Celery/Redis/OSS infra, WeChat MP scaffold with domain whitelist
-- [ ] **Phase 2: Auth, Data Layer & Admin CRUD** - WeChat login + tenant isolation, category/style/term/rule CRUD, admin UI
+- [x] **Phase 2: Auth, Data Layer & Admin CRUD** - WeChat login + tenant isolation, category/style/term/rule CRUD, admin UI
 - [ ] **Phase 3: AI Generation Pipeline** - Upload flow, Vision API, Image Gen, Celery worker pipeline, prompt engine, watermark, task lifecycle
 - [ ] **Phase 4: Quota, Billing & Frontend UX** - Quota system, complete wizard flow, task history, save to album, privacy compliance
 - [ ] **Phase 5: Hardening & Launch Prep** - Task monitoring, error codes, job watchdog, Sentry + Flower observability
@@ -45,9 +45,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [x] 02-01-PLAN.md — Authentication & Tenant System (WeChat login + JWT dual-token + tenant isolation middleware)
+- [x] 02-02-PLAN.md — Data Layer Models & Admin CRUD APIs (Category/Style/Term/PromoRule CRUD)
+- [x] 02-03-PLAN.md — Frontend WeChat Auth Integration (auto-login + token refresh + session check)
 
 ### Phase 3: AI Generation Pipeline
 **Goal**: Users can upload product photos, and the system generates promotional images via the full AI pipeline — Vision analysis, prompt assembly, image generation, watermark overlay — with task tracking and result delivery.
@@ -107,7 +107,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 0/3 | Not started | - |
-| 2. Auth, Data Layer & Admin CRUD | 0/3 | Not started | - |
+| 2. Auth, Data Layer & Admin CRUD | 3/3 | Complete | 2026-05-12 |
 | 3. AI Generation Pipeline | 0/3 | Not started | - |
 | 4. Quota, Billing & Frontend UX | 0/3 | Not started | - |
 | 5. Hardening & Launch Prep | 0/2 | Not started | - |
