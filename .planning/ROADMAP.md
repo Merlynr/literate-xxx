@@ -80,9 +80,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01 — Quota ledger, pricing plans, and billing APIs
+- [ ] 04-02 — Privacy consent and generation history APIs
+- [ ] 04-03 — Home/My/Generate frontend UX completion
 
 ### Phase 5: Hardening & Launch Prep
 **Goal**: The platform is production-ready with proper monitoring, standardized error handling, and automated recovery from stuck jobs.
