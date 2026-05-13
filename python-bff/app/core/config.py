@@ -43,5 +43,8 @@ class Settings(BaseSettings):
     WX_APP_ID: str = ""
     WX_APP_SECRET: str = ""
 
+    # AI providers
+    DASHSCOPE_API_KEY: str = ""
+
 
 settings = Settings()
