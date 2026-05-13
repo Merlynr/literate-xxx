@@ -76,6 +76,8 @@ class GenerationJobResponse(BaseModel):
     request_snapshot: dict
     error_code: str
     error_message: str
+    raw_result_download_url: str | None = None
+    watermarked_result_download_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -101,6 +103,8 @@ def _asset_response(asset: GenerationAsset) -> GenerationAssetResponse:
 
 
 def _job_response(job: GenerationJob) -> GenerationJobResponse:
+    raw_result_download_url = None
+    watermarked_result_download_url = None
     return GenerationJobResponse(
         job_id=job.id,
         tenant_id=job.tenant_id,
@@ -117,6 +121,8 @@ def _job_response(job: GenerationJob) -> GenerationJobResponse:
         request_snapshot=job.request_snapshot,
         error_code=job.error_code,
         error_message=job.error_message,
+        raw_result_download_url=raw_result_download_url,
+        watermarked_result_download_url=watermarked_result_download_url,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -180,4 +186,21 @@ async def read_job(
     job = await get_generation_job(db, tenant_id=tenant_id, job_id=job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
-    return _job_response(job)
+    if job.raw_result_asset_id:
+        raw_asset = await db.get(GenerationAsset, job.raw_result_asset_id)
+        if raw_asset and raw_asset.tenant_id == tenant_id:
+            job.__dict__["raw_result_asset"] = raw_asset
+    if job.watermarked_result_asset_id:
+        watermarked_asset = await db.get(GenerationAsset, job.watermarked_result_asset_id)
+        if watermarked_asset and watermarked_asset.tenant_id == tenant_id:
+            job.__dict__["watermarked_result_asset"] = watermarked_asset
+    raw_result_download_url = None
+    watermarked_result_download_url = None
+    if job.__dict__.get("raw_result_asset"):
+        raw_result_download_url = generation_asset_download_url(job.__dict__["raw_result_asset"])
+    if job.__dict__.get("watermarked_result_asset"):
+        watermarked_result_download_url = generation_asset_download_url(job.__dict__["watermarked_result_asset"])
+    response = _job_response(job)
+    response.raw_result_download_url = raw_result_download_url
+    response.watermarked_result_download_url = watermarked_result_download_url
+    return response
