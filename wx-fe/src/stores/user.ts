@@ -1,6 +1,6 @@
 ﻿import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login as apiLogin, refreshToken as apiRefresh, getMe } from '../api/auth'
+import { login as apiLogin, refreshToken as apiRefresh, getMe, devLogin as apiDevLogin } from '../api/auth'
 import { setToken } from '../api/request'
 
 const ACCESS_TOKEN_KEY = 'xxzx_access_token'
@@ -60,13 +60,36 @@ export const useUserStore = defineStore('user', () => {
             userId.value = profile.id
             resolve(true)
           } catch (e) {
-            console.error('Login failed:', e)
-            resolve(false)
+            console.warn('WeChat login failed, falling back to dev login:', e)
+            try {
+              const tokens = await apiDevLogin({ nickname: '本地调试' })
+              saveTokens(tokens.access_token, tokens.refresh_token)
+              const profile = await getMe()
+              nickname.value = profile.nickname
+              tenantId.value = profile.tenant_id
+              userId.value = profile.id
+              resolve(true)
+            } catch (devError) {
+              console.error('Dev login failed:', devError)
+              resolve(false)
+            }
           }
         },
         fail: (err) => {
-          console.error('wx.login failed:', err)
-          resolve(false)
+          console.warn('wx.login failed, falling back to dev login:', err)
+          apiDevLogin({ nickname: '本地调试' })
+            .then(async (tokens) => {
+              saveTokens(tokens.access_token, tokens.refresh_token)
+              const profile = await getMe()
+              nickname.value = profile.nickname
+              tenantId.value = profile.tenant_id
+              userId.value = profile.id
+              resolve(true)
+            })
+            .catch((devError) => {
+              console.error('Dev login failed:', devError)
+              resolve(false)
+            })
         },
       })
     })

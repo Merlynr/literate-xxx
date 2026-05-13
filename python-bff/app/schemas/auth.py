@@ -7,6 +7,11 @@ class WechatLoginRequest(BaseModel):
     code: str  # wx.login() code
 
 
+class DevLoginRequest(BaseModel):
+    nickname: str = "本地调试"
+    avatar_url: str = ""
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

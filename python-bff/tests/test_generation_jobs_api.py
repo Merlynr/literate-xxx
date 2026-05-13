@@ -30,6 +30,7 @@ async def test_confirm_generation_asset(client, monkeypatch):
             asset_role="source",
             oss_bucket="xxzx-assets",
             oss_key="uploads/demo.jpg",
+            oss_key_digest="7c3a21df12b40a4e5d1b7f0e9d1b8bafad43f2f6de7df3f0f2f1f9e3f0b7f7f1",
             original_filename="demo.jpg",
             content_type="image/jpeg",
             size_bytes=123,

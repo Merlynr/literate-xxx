@@ -1,6 +1,6 @@
 """phase 3 generation tables
 
-Revision ID: 20260513_phase3_generation_tables
+Revision ID: 20260513_phase3_gen
 Revises: 003_data_layer
 Create Date: 2026-05-13 00:00:00.000000
 """
@@ -12,7 +12,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "20260513_phase3_generation_tables"
+revision: str = "20260513_phase3_gen"
 down_revision: Union[str, None] = "003_data_layer"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,6 +27,7 @@ def upgrade() -> None:
         sa.Column("asset_role", sa.String(length=32), nullable=False, server_default="source"),
         sa.Column("oss_bucket", sa.String(length=128), nullable=False),
         sa.Column("oss_key", sa.String(length=1024), nullable=False),
+        sa.Column("oss_key_digest", sa.String(length=64), nullable=False),
         sa.Column("original_filename", sa.String(length=256), nullable=False, server_default=""),
         sa.Column("content_type", sa.String(length=128), nullable=False, server_default="application/octet-stream"),
         sa.Column("size_bytes", sa.Integer(), nullable=True),
@@ -38,7 +39,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("tenant_id", "oss_key", name="uq_generation_assets_tenant_oss_key"),
+        sa.UniqueConstraint("tenant_id", "oss_key_digest", name="uq_generation_assets_tenant_oss_key_digest"),
     )
     op.create_index("ix_generation_assets_tenant_id", "generation_assets", ["tenant_id"], unique=False)
     op.create_index("ix_generation_assets_job_id", "generation_assets", ["job_id"], unique=False)

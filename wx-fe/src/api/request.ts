@@ -47,6 +47,10 @@ export function setToken(token: string) {
   authToken = token
 }
 
+export function getToken() {
+  return authToken
+}
+
 /** Lazy import to avoid circular dependency */
 async function tryRefreshAndRetry<T>(options: RequestOptions): Promise<ApiResponse<T>> {
   // Dynamically import the store

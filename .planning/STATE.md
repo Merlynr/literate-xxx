@@ -77,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-13
-Stopped at: Phase 3 planned (3 plans), ready to execute
-Resume file: .planning/phases/03-ai-generation-pipeline/03-CONTEXT.md
+Stopped at: Phase 3 complete (3 plans), ready for Phase 4 planning
+Resume file: .planning/ROADMAP.md

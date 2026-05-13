@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime
 from typing import Any
@@ -31,6 +32,10 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     return value
+
+
+def _oss_key_digest(oss_key: str) -> str:
+    return hashlib.sha256(oss_key.encode("utf-8")).hexdigest()
 
 
 def _asset_snapshot(asset: GenerationAsset) -> dict[str, Any]:
@@ -138,10 +143,11 @@ async def confirm_generation_asset(
     height: int | None = None,
     extra_metadata: dict[str, Any] | None = None,
 ) -> GenerationAsset:
+    oss_key_digest = _oss_key_digest(oss_key)
     existing = await db.scalar(
         select(GenerationAsset).where(
             GenerationAsset.tenant_id == tenant_id,
-            GenerationAsset.oss_key == oss_key,
+            GenerationAsset.oss_key_digest == oss_key_digest,
         )
     )
     if existing:
@@ -152,6 +158,7 @@ async def confirm_generation_asset(
         asset_role=asset_role,
         oss_bucket=oss_bucket or settings.S3_BUCKET,
         oss_key=oss_key,
+        oss_key_digest=oss_key_digest,
         original_filename=filename,
         content_type=content_type,
         size_bytes=size_bytes,
@@ -162,6 +169,7 @@ async def confirm_generation_asset(
     )
     db.add(asset)
     await db.flush()
+    await db.refresh(asset)
     return asset
 
 
@@ -248,6 +256,7 @@ async def create_generation_job(
                     "task_id": existing.task_id,
                 },
             )
+        await db.refresh(existing)
         return existing
 
     source_asset = await _load_source_asset(db, tenant_id, source_asset_id)
@@ -281,6 +290,7 @@ async def create_generation_job(
     )
     db.add(job)
     await db.flush()
+    await db.refresh(job)
 
     if schedule_task:
         result = celery_app.send_task("generation.process", kwargs={"job_id": str(job.id)})
@@ -300,6 +310,7 @@ async def create_generation_job(
             "task_id": job.task_id,
         },
     )
+    await db.refresh(job)
     return job
 
 

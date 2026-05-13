@@ -46,6 +46,10 @@ def hash_bytes(content: bytes) -> str:
     return sha256(content).hexdigest()
 
 
+def hash_oss_key(oss_key: str) -> str:
+    return sha256(oss_key.encode("utf-8")).hexdigest()
+
+
 async def persist_generation_result_asset(
     db: AsyncSession,
     *,
@@ -72,6 +76,7 @@ async def persist_generation_result_asset(
         asset_role=asset_role,
         oss_bucket=settings.S3_BUCKET,
         oss_key=oss_key,
+        oss_key_digest=hash_oss_key(oss_key),
         original_filename=original_filename,
         content_type=content_type,
         size_bytes=len(content),
@@ -83,6 +88,7 @@ async def persist_generation_result_asset(
     )
     db.add(asset)
     await db.flush()
+    await db.refresh(asset)
     return asset
 
 

@@ -10,6 +10,7 @@ from app.core.security import create_access_token, create_refresh_token, decode_
 from app.models.user import User
 from app.models.tenant import Tenant
 from app.schemas.auth import (
+    DevLoginRequest,
     WechatLoginRequest,
     TokenResponse,
     RefreshTokenRequest,
@@ -17,6 +18,45 @@ from app.schemas.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+DEV_LOGIN_OPENID = "dev-local-openid"
+
+
+def _issue_tokens(user: User) -> TokenResponse:
+    user_id_str = str(user.id)
+    tenant_id_str = str(user.tenant_id)
+    return TokenResponse(
+        access_token=create_access_token(user_id_str, tenant_id_str),
+        refresh_token=create_refresh_token(user_id_str, tenant_id_str),
+        expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+async def _get_or_create_dev_user(
+    db: AsyncSession,
+    *,
+    nickname: str = "本地调试",
+    avatar_url: str = "",
+) -> User:
+    result = await db.execute(select(User).where(User.openid == DEV_LOGIN_OPENID))
+    user = result.scalar_one_or_none()
+    if user:
+        return user
+
+    tenant = Tenant(name="Local Dev Tenant")
+    db.add(tenant)
+    await db.flush()
+    await db.refresh(tenant)
+
+    user = User(
+        openid=DEV_LOGIN_OPENID,
+        nickname=nickname,
+        avatar_url=avatar_url,
+        tenant_id=tenant.id,
+    )
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+    return user
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -51,6 +91,7 @@ async def wechat_login(body: WechatLoginRequest, db: AsyncSession = Depends(get_
         tenant = Tenant(name=f"Tenant-{openid[:8]}")
         db.add(tenant)
         await db.flush()  # get tenant.id
+        await db.refresh(tenant)
 
         user = User(
             openid=openid,
@@ -60,16 +101,23 @@ async def wechat_login(body: WechatLoginRequest, db: AsyncSession = Depends(get_
         )
         db.add(user)
         await db.flush()
+        await db.refresh(user)
 
-    # 3. Issue tokens
-    user_id_str = str(user.id)
-    tenant_id_str = str(user.tenant_id)
+    return _issue_tokens(user)
 
-    return TokenResponse(
-        access_token=create_access_token(user_id_str, tenant_id_str),
-        refresh_token=create_refresh_token(user_id_str, tenant_id_str),
-        expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+
+@router.post("/dev-login", response_model=TokenResponse)
+async def dev_login(body: DevLoginRequest | None = None, db: AsyncSession = Depends(get_db)):
+    """Local development login. Only available when DEBUG=true."""
+    if not settings.DEBUG:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    payload = body or DevLoginRequest()
+    user = await _get_or_create_dev_user(
+        db,
+        nickname=payload.nickname,
+        avatar_url=payload.avatar_url,
     )
+    return _issue_tokens(user)
 
 
 @router.post("/refresh", response_model=TokenResponse)

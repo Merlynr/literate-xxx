@@ -31,6 +31,7 @@ function chooseImage(): Promise<LocalFileSelection | null> {
       sourceType: ['album', 'camera'],
       success: (res) => {
         const filePath = res.tempFilePaths?.[0]
+        const fileInfo = (res as any).tempFiles?.[0]
         if (!filePath) {
           resolve(null)
           return
@@ -38,6 +39,7 @@ function chooseImage(): Promise<LocalFileSelection | null> {
         resolve({
           path: filePath,
           name: filePath.split(/[/\\]/).pop() || `source-${Date.now()}.jpg`,
+          size: fileInfo?.size,
         })
       },
       fail: reject,
@@ -123,6 +125,7 @@ export const useGenerationStore = defineStore('generation', () => {
       const asset = await uploadGenerationAssetFromLocalPath(selection.path, {
         filename: selection.name,
         assetRole: 'source',
+        sizeBytes: selection.size,
       })
       sourceAsset.value = asset
       sourcePreviewUrl.value = asset.download_url
