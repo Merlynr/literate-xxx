@@ -20,6 +20,23 @@ interface ApiResponse<T = unknown> {
   message: string
 }
 
+function normalizeResponse<T>(payload: unknown): ApiResponse<T> {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'code' in (payload as Record<string, unknown>) &&
+    'data' in (payload as Record<string, unknown>) &&
+    'message' in (payload as Record<string, unknown>)
+  ) {
+    return payload as ApiResponse<T>
+  }
+  return {
+    code: 0,
+    data: payload as T,
+    message: 'ok',
+  }
+}
+
 // BFF base URL — update per environment
 // WeChat Mini Program requires HTTPS in production; HTTP OK for dev
 const BASE_URL = 'http://localhost:8000/api/v1'
@@ -59,11 +76,11 @@ export function request<T = unknown>(options: RequestOptions): Promise<ApiRespon
     uni.request({
       url: `${BASE_URL}${options.url}`,
       method: options.method || 'GET',
-      data: options.data,
+      data: options.data as string | Record<string, unknown> | ArrayBuffer | undefined,
       header,
       success: async (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(res.data as ApiResponse<T>)
+          resolve(normalizeResponse<T>(res.data))
         } else if (res.statusCode === 401 && !options._retry) {
           // Attempt silent refresh
           try {
