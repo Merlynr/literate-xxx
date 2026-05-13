@@ -3,6 +3,7 @@ import type {
   GenerationAssetConfirmPayload,
   GenerationAssetResponse,
   GenerationCategory,
+  GenerationHistoryItem,
   GenerationJobCreatePayload,
   GenerationJobResponse,
   GenerationStyle,
@@ -190,6 +191,13 @@ export async function createGenerationJob(
 export async function getGenerationJob(jobId: string): Promise<GenerationJobResponse> {
   return request<GenerationJobResponse>({
     url: `/generation-jobs/${jobId}`,
+    method: 'GET',
+  }).then((res) => res.data)
+}
+
+export async function listGenerationHistory(offset = 0, limit = 20): Promise<GenerationHistoryItem[]> {
+  return request<GenerationHistoryItem[]>({
+    url: `/generation-history?offset=${offset}&limit=${limit}`,
     method: 'GET',
   }).then((res) => res.data)
 }

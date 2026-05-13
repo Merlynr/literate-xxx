@@ -12,7 +12,16 @@ export const useUserStore = defineStore('user', () => {
   const nickname = ref('')
   const tenantId = ref('')
   const userId = ref('')
+  const privacyAcceptedAt = ref('')
   const isLoggedIn = computed(() => !!accessToken.value)
+  const hasPrivacyAgreement = computed(() => !!privacyAcceptedAt.value)
+
+  function applyProfile(profile: Awaited<ReturnType<typeof getMe>>) {
+    nickname.value = profile.nickname
+    tenantId.value = profile.tenant_id
+    userId.value = profile.id
+    privacyAcceptedAt.value = profile.privacy_accepted_at || ''
+  }
 
   /** Load tokens from storage on app start */
   function loadTokens() {
@@ -39,6 +48,7 @@ export const useUserStore = defineStore('user', () => {
     nickname.value = ''
     tenantId.value = ''
     userId.value = ''
+    privacyAcceptedAt.value = ''
     uni.removeStorageSync(ACCESS_TOKEN_KEY)
     uni.removeStorageSync(REFRESH_TOKEN_KEY)
     setToken('')
@@ -55,9 +65,7 @@ export const useUserStore = defineStore('user', () => {
             saveTokens(tokens.access_token, tokens.refresh_token)
             // Fetch user profile
             const profile = await getMe()
-            nickname.value = profile.nickname
-            tenantId.value = profile.tenant_id
-            userId.value = profile.id
+            applyProfile(profile)
             resolve(true)
           } catch (e) {
             console.warn('WeChat login failed, falling back to dev login:', e)
@@ -65,9 +73,7 @@ export const useUserStore = defineStore('user', () => {
               const tokens = await apiDevLogin({ nickname: '本地调试' })
               saveTokens(tokens.access_token, tokens.refresh_token)
               const profile = await getMe()
-              nickname.value = profile.nickname
-              tenantId.value = profile.tenant_id
-              userId.value = profile.id
+              applyProfile(profile)
               resolve(true)
             } catch (devError) {
               console.error('Dev login failed:', devError)
@@ -81,9 +87,7 @@ export const useUserStore = defineStore('user', () => {
             .then(async (tokens) => {
               saveTokens(tokens.access_token, tokens.refresh_token)
               const profile = await getMe()
-              nickname.value = profile.nickname
-              tenantId.value = profile.tenant_id
-              userId.value = profile.id
+              applyProfile(profile)
               resolve(true)
             })
             .catch((devError) => {
@@ -133,11 +137,13 @@ export const useUserStore = defineStore('user', () => {
     // Check WeChat session
     const sessionOk = await checkAndRelogin()
     if (!sessionOk) return false
+    const profile = await getMe()
+    applyProfile(profile)
     return true
   }
 
   return {
-    accessToken, refreshTokenValue, nickname, tenantId, userId, isLoggedIn,
+    accessToken, refreshTokenValue, nickname, tenantId, userId, privacyAcceptedAt, isLoggedIn, hasPrivacyAgreement,
     loadTokens, saveTokens, clearAuth, wxLogin, tryRefreshToken,
     checkAndRelogin, ensureAuth,
   }

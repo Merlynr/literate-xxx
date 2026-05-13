@@ -5,17 +5,21 @@ import {
   buildGenerationRequestId,
   createGenerationJob,
   getGenerationJob,
+  listGenerationHistory,
   listGenerationCategories,
   listGenerationStyles,
   uploadGenerationAssetFromLocalPath,
 } from '@/api/generation'
+import { acceptPrivacyAgreement as apiAcceptPrivacy } from '@/api/privacy'
 import type {
   GenerationAssetResponse,
   GenerationCategory,
+  GenerationHistoryItem,
   GenerationJobResponse,
   GenerationStyle,
   LocalFileSelection,
 } from '@/types/generation'
+import { useUserStore } from './user'
 
 type GenerationStage = 'idle' | 'ready' | 'generating' | 'succeeded' | 'failed'
 
@@ -48,6 +52,7 @@ function chooseImage(): Promise<LocalFileSelection | null> {
 }
 
 export const useGenerationStore = defineStore('generation', () => {
+  const userStore = useUserStore()
   const categories = ref<GenerationCategory[]>([])
   const styles = ref<GenerationStyle[]>([])
   const selectedCategoryId = ref('')
@@ -59,9 +64,12 @@ export const useGenerationStore = defineStore('generation', () => {
   const sourcePreviewUrl = ref('')
 
   const currentJob = ref<GenerationJobResponse | null>(null)
+  const historyItems = ref<GenerationHistoryItem[]>([])
   const stage = ref<GenerationStage>('idle')
   const loadingCatalog = ref(false)
+  const loadingHistory = ref(false)
   const busy = ref(false)
+  const privacyBusy = ref(false)
   const errorMessage = ref('')
   const statusMessage = ref('先上传一张商品照片')
   const progress = ref(0)
@@ -75,7 +83,13 @@ export const useGenerationStore = defineStore('generation', () => {
   })
 
   const canGenerate = computed(() => {
-    return !!sourceAsset.value && !!selectedCategoryId.value && !!selectedStyleId.value && !busy.value
+    return (
+      !!sourceAsset.value &&
+      !!selectedCategoryId.value &&
+      !!selectedStyleId.value &&
+      !busy.value &&
+      userStore.hasPrivacyAgreement
+    )
   })
 
   const rawResultUrl = computed(() => currentJob.value?.raw_result_download_url || '')
@@ -107,6 +121,30 @@ export const useGenerationStore = defineStore('generation', () => {
       }
     } finally {
       loadingCatalog.value = false
+    }
+  }
+
+  async function loadHistory(offset = 0, limit = 20) {
+    loadingHistory.value = true
+    try {
+      historyItems.value = await listGenerationHistory(offset, limit)
+      return historyItems.value
+    } finally {
+      loadingHistory.value = false
+    }
+  }
+
+  async function acceptPrivacyAgreement() {
+    if (userStore.hasPrivacyAgreement) {
+      return true
+    }
+    privacyBusy.value = true
+    try {
+      const result = await apiAcceptPrivacy()
+      userStore.privacyAcceptedAt = result.privacy_accepted_at || ''
+      return true
+    } finally {
+      privacyBusy.value = false
     }
   }
 
@@ -163,6 +201,9 @@ export const useGenerationStore = defineStore('generation', () => {
     }
     if (!selectedCategoryId.value || !selectedStyleId.value) {
       throw new Error('请先选择类目和风格')
+    }
+    if (!userStore.hasPrivacyAgreement) {
+      throw new Error('请先勾选隐私协议')
     }
     busy.value = true
     errorMessage.value = ''
@@ -230,9 +271,12 @@ export const useGenerationStore = defineStore('generation', () => {
     sourceAsset,
     sourcePreviewUrl,
     currentJob,
+    historyItems,
     stage,
     loadingCatalog,
+    loadingHistory,
     busy,
+    privacyBusy,
     errorMessage,
     statusMessage,
     progress,
@@ -243,6 +287,8 @@ export const useGenerationStore = defineStore('generation', () => {
     watermarkedResultUrl,
     hasResult,
     loadCatalogs,
+    loadHistory,
+    acceptPrivacyAgreement,
     pickAndUploadSourceImage,
     startGeneration,
     clearCurrentJob,

@@ -1,15 +1,18 @@
-﻿<template>
+<template>
   <view class="page-home">
     <view class="hero">
       <text class="title">XX甄选</text>
       <text class="subtitle">AI商品宣传图生成</text>
+      <text class="intro">把实拍图变成可直接投放的商品海报</text>
     </view>
-    <view v-if="userStore.isLoggedIn" class="quota-bar">
-      <text>已登录</text>
-    </view>
-    <view v-else class="quota-bar">
-      <text>登录中...</text>
-    </view>
+
+    <QuotaCard
+      :summary="quotaSummary"
+      :busy="quotaLoading"
+      action-text="开始生成"
+      @action="goToGenerate"
+    />
+
     <view class="features">
       <view class="feature-card">
         <text class="feature-icon">📷</text>
@@ -31,13 +34,32 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
+import QuotaCard from '@/components/quota/QuotaCard.vue'
+import { getQuotaSummary } from '@/api/quota'
 import { useUserStore } from '@/stores/user'
+import type { QuotaSummary } from '@/types/generation'
 
 const userStore = useUserStore()
+const quotaSummary = ref<QuotaSummary | null>(null)
+const quotaLoading = ref(false)
+
+async function loadQuotaSummary() {
+  quotaLoading.value = true
+  try {
+    quotaSummary.value = await getQuotaSummary()
+  } finally {
+    quotaLoading.value = false
+  }
+}
+
+function goToGenerate() {
+  uni.switchTab({ url: '/pages/generate/index' })
+}
 
 onMounted(async () => {
   await userStore.ensureAuth()
+  await loadQuotaSummary()
 })
 </script>
 
@@ -47,7 +69,7 @@ onMounted(async () => {
 }
 .hero {
   text-align: center;
-  padding: 60rpx 0;
+  padding: 60rpx 0 32rpx;
 }
 .title {
   font-size: 48rpx;
@@ -60,11 +82,11 @@ onMounted(async () => {
   display: block;
   margin-top: 16rpx;
 }
-.quota-bar {
-  text-align: center;
-  padding: 16rpx 0;
+.intro {
+  display: block;
+  margin-top: 16rpx;
   font-size: 24rpx;
-  color: #999;
+  color: rgba(16, 41, 27, 0.68);
 }
 .features {
   display: flex;

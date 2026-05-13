@@ -16,6 +16,8 @@ from app.models.generation_job import GenerationJob
 from app.models.generation_job_event import GenerationJobEvent
 from app.models.promo_rule import PromoRule
 from app.models.style import Style
+from app.services.privacy_service import has_generation_privacy_agreement
+from app.services.quota_service import freeze_quota
 from app.services.oss import generate_presigned_download_url
 from app.workers.celery_app import celery_app
 
@@ -213,6 +215,7 @@ async def create_generation_job(
     db: AsyncSession,
     *,
     tenant_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
     client_request_id: str,
     source_asset_id: uuid.UUID,
     category_id: uuid.UUID | None = None,
@@ -263,6 +266,11 @@ async def create_generation_job(
     category = await _load_category(db, tenant_id, category_id)
     style = await _load_style(db, tenant_id, style_id)
     active_rule = await _load_active_rule(db, tenant_id)
+    if user_id and not await has_generation_privacy_agreement(db, tenant_id=tenant_id, user_id=user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please accept the generation privacy agreement first",
+        )
 
     prompt_snapshot = {
         "source_asset": _asset_snapshot(source_asset),
@@ -274,8 +282,17 @@ async def create_generation_job(
     rule_snapshot["provider"] = "alibaba-dashscope"
     rule_snapshot["model_name"] = "wan2.7-image"
     rule_snapshot["watermark_policy"] = "separate_oss_assets"
+    job_id = uuid.uuid4()
+    await freeze_quota(
+        db,
+        tenant_id=tenant_id,
+        job_id=job_id,
+        units=1,
+        reason="generation.job.create",
+    )
 
     job = GenerationJob(
+        id=job_id,
         tenant_id=tenant_id,
         client_request_id=client_request_id,
         status="queued",

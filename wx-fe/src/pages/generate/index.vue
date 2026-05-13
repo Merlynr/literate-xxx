@@ -5,12 +5,19 @@
 
     <view class="shell">
       <view class="hero">
-        <text class="eyebrow">Phase 3 · AI Generation Pipeline</text>
+        <text class="eyebrow">Phase 4 · Quota & UX</text>
         <text class="title">把实物图，变成能直接投放的宣传海报</text>
         <text class="subtitle">
-          先上传实拍图，再选类目和风格。后端会冻结规则快照，输出原图和水印图两个 OSS 成品。
+          先上传实拍图，再选类目和风格。后端会冻结额度快照，输出原图和水印图两个 OSS 成品。
         </text>
       </view>
+
+      <PrivacyAgreementCard
+        v-if="!userStore.hasPrivacyAgreement"
+        :accepted="userStore.hasPrivacyAgreement"
+        :busy="generationStore.privacyBusy"
+        @accept="handleAcceptPrivacy"
+      />
 
       <GenerateStepper :stage="generationStore.stage" />
 
@@ -78,7 +85,7 @@
         <button class="secondary" :disabled="generationStore.busy" @tap="generationStore.resetResultState">
           清空结果
         </button>
-        <button class="primary" :disabled="!generationStore.canGenerate" @tap="generationStore.startGeneration">
+        <button class="primary" :disabled="!generationStore.canGenerate" @tap="startGeneration">
           开始生成
         </button>
       </view>
@@ -103,22 +110,32 @@
         :watermarked-url="generationStore.watermarkedResultUrl"
         @preview="openPreview"
       />
+
+      <AlbumActions
+        v-if="generationStore.hasResult"
+        :raw-url="generationStore.rawResultUrl"
+        :watermarked-url="generationStore.watermarkedResultUrl"
+        :busy="savingToAlbum"
+        @save="saveResultToAlbum"
+      />
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-
+import { onMounted, ref } from 'vue'
 import GenerateStepper from '@/components/generate/GenerateStepper.vue'
 import UploadCard from '@/components/generate/UploadCard.vue'
 import ProgressPanel from '@/components/generate/ProgressPanel.vue'
 import ResultPanel from '@/components/generate/ResultPanel.vue'
+import AlbumActions from '@/components/generate/AlbumActions.vue'
+import PrivacyAgreementCard from '@/components/privacy/PrivacyAgreementCard.vue'
 import { useUserStore } from '@/stores/user'
 import { useGenerationStore } from '@/stores/generation'
 
 const userStore = useUserStore()
 const generationStore = useGenerationStore()
+const savingToAlbum = ref(false)
 
 function openPreview(url: string) {
   if (!url) return
@@ -126,6 +143,78 @@ function openPreview(url: string) {
     urls: [url],
     current: url,
   })
+}
+
+async function handleAcceptPrivacy() {
+  await generationStore.acceptPrivacyAgreement()
+}
+
+async function ensureAlbumPermission() {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      uni.authorize({
+        scope: 'scope.writePhotosAlbum',
+        success: () => resolve(),
+        fail: reject,
+      })
+    })
+  } catch {
+    await new Promise<void>((resolve, reject) => {
+      uni.openSetting({
+        success: (res) => {
+          if (res.authSetting?.['scope.writePhotosAlbum']) {
+            resolve()
+            return
+          }
+          reject(new Error('未开启相册权限'))
+        },
+        fail: reject,
+      })
+    })
+  }
+}
+
+async function saveUrlToAlbum(url: string) {
+  if (!url) throw new Error('没有可保存的图片')
+  savingToAlbum.value = true
+  try {
+    await ensureAlbumPermission()
+    const tempFile = await new Promise<string>((resolve, reject) => {
+      uni.downloadFile({
+        url,
+        success: (res) => {
+          if (res.statusCode >= 200 && res.statusCode < 300 && res.tempFilePath) {
+            resolve(res.tempFilePath)
+            return
+          }
+          reject(new Error('图片下载失败'))
+        },
+        fail: reject,
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      uni.saveImageToPhotosAlbum({
+        filePath: tempFile,
+        success: () => resolve(),
+        fail: reject,
+      })
+    })
+    uni.showToast({ title: '已保存到相册', icon: 'success' })
+  } finally {
+    savingToAlbum.value = false
+  }
+}
+
+async function saveResultToAlbum(kind: 'raw' | 'watermarked') {
+  const url = kind === 'raw' ? generationStore.rawResultUrl : generationStore.watermarkedResultUrl
+  await saveUrlToAlbum(url)
+}
+
+async function startGeneration() {
+  if (!userStore.hasPrivacyAgreement) {
+    await handleAcceptPrivacy()
+  }
+  await generationStore.startGeneration()
 }
 
 onMounted(async () => {
@@ -144,7 +233,6 @@ onMounted(async () => {
     radial-gradient(circle at top right, rgba(31, 93, 58, 0.16), transparent 28%),
     linear-gradient(180deg, #fbf7ef 0%, #f3ead8 52%, #eef3ee 100%);
 }
-
 .backdrop {
   position: absolute;
   border-radius: 999rpx;
@@ -152,7 +240,6 @@ onMounted(async () => {
   opacity: 0.55;
   pointer-events: none;
 }
-
 .backdrop-a {
   width: 240rpx;
   height: 240rpx;
@@ -160,7 +247,6 @@ onMounted(async () => {
   top: -60rpx;
   right: -70rpx;
 }
-
 .backdrop-b {
   width: 300rpx;
   height: 300rpx;
@@ -168,18 +254,15 @@ onMounted(async () => {
   top: 320rpx;
   left: -120rpx;
 }
-
 .shell {
   position: relative;
   z-index: 1;
   display: grid;
   gap: 24rpx;
 }
-
 .hero {
   padding: 24rpx 6rpx 8rpx;
 }
-
 .eyebrow {
   display: block;
   font-size: 20rpx;
@@ -187,7 +270,6 @@ onMounted(async () => {
   color: #1f5d3a;
   text-transform: uppercase;
 }
-
 .title {
   display: block;
   margin-top: 14rpx;
@@ -196,7 +278,6 @@ onMounted(async () => {
   line-height: 1.15;
   color: #10291b;
 }
-
 .subtitle {
   display: block;
   margin-top: 14rpx;
@@ -204,12 +285,10 @@ onMounted(async () => {
   line-height: 1.7;
   color: rgba(16, 41, 27, 0.68);
 }
-
 .selection-grid {
   display: grid;
   gap: 20rpx;
 }
-
 .section {
   padding: 24rpx;
   border-radius: 28rpx;
@@ -217,29 +296,25 @@ onMounted(async () => {
   border: 1rpx solid rgba(18, 48, 32, 0.08);
   box-shadow: 0 16rpx 36rpx rgba(38, 60, 44, 0.07);
 }
-
 .section-head {
   display: flex;
   flex-direction: column;
   gap: 8rpx;
   margin-bottom: 18rpx;
 }
-
 .section-title {
   font-size: 30rpx;
   font-weight: 800;
   color: #10291b;
 }
-
 .section-desc {
   font-size: 22rpx;
   color: rgba(16, 41, 27, 0.58);
 }
-
-.chips {
+.chips,
+.style-strip {
   white-space: nowrap;
 }
-
 .chip {
   display: inline-flex;
   align-items: center;
@@ -251,17 +326,11 @@ onMounted(async () => {
   font-size: 24rpx;
   font-weight: 700;
 }
-
 .chip.active {
   background: linear-gradient(135deg, #1f5d3a, #2d7d4d);
   color: #fff;
   box-shadow: 0 10rpx 24rpx rgba(31, 93, 58, 0.18);
 }
-
-.style-strip {
-  white-space: nowrap;
-}
-
 .style-card {
   display: inline-flex;
   flex-direction: column;
@@ -272,18 +341,15 @@ onMounted(async () => {
   background: rgba(255, 255, 255, 0.78);
   border: 1rpx solid rgba(18, 48, 32, 0.08);
 }
-
 .style-card.active {
   box-shadow: 0 16rpx 34rpx rgba(31, 93, 58, 0.16);
   border-color: rgba(31, 93, 58, 0.22);
 }
-
 .style-cover,
 .style-fallback {
   width: 200rpx;
   height: 220rpx;
 }
-
 .style-fallback {
   display: flex;
   align-items: center;
@@ -293,28 +359,24 @@ onMounted(async () => {
   font-size: 28rpx;
   font-weight: 700;
 }
-
 .style-name {
   padding: 18rpx 16rpx 20rpx;
   font-size: 22rpx;
   font-weight: 700;
   color: #10291b;
 }
-
 .note-card {
   padding: 24rpx;
   border-radius: 28rpx;
   background: rgba(255, 255, 255, 0.72);
   border: 1rpx solid rgba(18, 48, 32, 0.08);
 }
-
 .note-title {
   display: block;
   font-size: 28rpx;
   font-weight: 800;
   color: #10291b;
 }
-
 .prompt {
   width: 100%;
   min-height: 160rpx;
@@ -327,12 +389,10 @@ onMounted(async () => {
   font-size: 24rpx;
   line-height: 1.7;
 }
-
 .cta-bar {
   display: flex;
   gap: 14rpx;
 }
-
 .primary,
 .secondary {
   flex: 1;
@@ -340,35 +400,29 @@ onMounted(async () => {
   font-size: 28rpx;
   font-weight: 800;
 }
-
 .primary {
   background: linear-gradient(135deg, #1f5d3a, #2d7d4d);
   color: #fff;
 }
-
 .secondary {
   background: rgba(31, 93, 58, 0.08);
   color: #1f5d3a;
 }
-
 .primary[disabled],
 .secondary[disabled] {
   opacity: 0.55;
 }
-
 .error-card {
   padding: 22rpx 24rpx;
   border-radius: 24rpx;
   background: rgba(158, 51, 27, 0.1);
   color: #9e331b;
 }
-
 .error-title {
   display: block;
   font-size: 26rpx;
   font-weight: 800;
 }
-
 .error-text {
   display: block;
   margin-top: 10rpx;

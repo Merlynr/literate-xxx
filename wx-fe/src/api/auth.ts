@@ -18,6 +18,7 @@ export interface UserProfile {
   nickname: string
   avatar_url: string
   tenant_id: string
+  privacy_accepted_at?: string | null
 }
 
 /** WeChat login: send wx.login code to backend */

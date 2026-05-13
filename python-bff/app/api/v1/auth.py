@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, decode_token
 from app.models.user import User
 from app.models.tenant import Tenant
+from app.services.privacy_service import get_generation_privacy_status
 from app.schemas.auth import (
     DevLoginRequest,
     WechatLoginRequest,
@@ -152,6 +153,12 @@ async def refresh_token(body: RefreshTokenRequest, db: AsyncSession = Depends(ge
 
 
 @router.get("/me", response_model=UserProfile)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get current authenticated user profile."""
-    return current_user
+    profile = UserProfile.model_validate(current_user)
+    consent = await get_generation_privacy_status(db, tenant_id=current_user.tenant_id, user_id=current_user.id)
+    profile.privacy_accepted_at = consent.consented_at if consent else None
+    return profile

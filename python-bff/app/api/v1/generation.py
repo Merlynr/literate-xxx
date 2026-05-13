@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant_id, get_db
+from app.api.deps import get_current_tenant_id, get_current_user, get_db
 from app.models.generation_asset import GenerationAsset
 from app.models.generation_job import GenerationJob
+from app.models.user import User
 from app.services.generation_jobs import (
     confirm_generation_asset,
     create_generation_job,
@@ -78,6 +79,7 @@ class GenerationJobResponse(BaseModel):
     error_message: str
     raw_result_download_url: str | None = None
     watermarked_result_download_url: str | None = None
+    source_preview_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -102,7 +104,7 @@ def _asset_response(asset: GenerationAsset) -> GenerationAssetResponse:
     )
 
 
-def _job_response(job: GenerationJob) -> GenerationJobResponse:
+def _job_response(job: GenerationJob, *, source_preview_url: str | None = None) -> GenerationJobResponse:
     raw_result_download_url = None
     watermarked_result_download_url = None
     return GenerationJobResponse(
@@ -123,6 +125,7 @@ def _job_response(job: GenerationJob) -> GenerationJobResponse:
         error_message=job.error_message,
         raw_result_download_url=raw_result_download_url,
         watermarked_result_download_url=watermarked_result_download_url,
+        source_preview_url=source_preview_url,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -154,6 +157,7 @@ async def confirm_asset(
 @router.post("/generation-jobs", response_model=GenerationJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_job(
     req: GenerationJobCreateRequest,
+    current_user: User = Depends(get_current_user),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -161,6 +165,7 @@ async def create_job(
         job = await create_generation_job(
             db,
             tenant_id=tenant_id,
+            user_id=current_user.id,
             client_request_id=req.client_request_id,
             source_asset_id=req.source_asset_id,
             category_id=req.category_id,
@@ -174,7 +179,10 @@ async def create_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    return _job_response(job)
+    source_asset = await db.get(GenerationAsset, job.source_asset_id)
+    source_preview_url = generation_asset_download_url(source_asset) if source_asset else None
+    response = _job_response(job, source_preview_url=source_preview_url)
+    return response
 
 
 @router.get("/generation-jobs/{job_id}", response_model=GenerationJobResponse)
@@ -200,7 +208,9 @@ async def read_job(
         raw_result_download_url = generation_asset_download_url(job.__dict__["raw_result_asset"])
     if job.__dict__.get("watermarked_result_asset"):
         watermarked_result_download_url = generation_asset_download_url(job.__dict__["watermarked_result_asset"])
-    response = _job_response(job)
+    source_asset = await db.get(GenerationAsset, job.source_asset_id)
+    source_preview_url = generation_asset_download_url(source_asset) if source_asset and source_asset.tenant_id == tenant_id else None
+    response = _job_response(job, source_preview_url=source_preview_url)
     response.raw_result_download_url = raw_result_download_url
     response.watermarked_result_download_url = watermarked_result_download_url
     return response

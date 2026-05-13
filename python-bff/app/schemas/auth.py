@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 import uuid
+from datetime import datetime
 from pydantic import BaseModel
 
 
@@ -37,6 +38,7 @@ class UserProfile(BaseModel):
     nickname: str
     avatar_url: str
     tenant_id: uuid.UUID
+    privacy_accepted_at: datetime | None = None
 
     class Config:
         from_attributes = True

@@ -58,8 +58,33 @@ export interface GenerationJobResponse {
   error_message: string
   raw_result_download_url?: string | null
   watermarked_result_download_url?: string | null
+  source_preview_url?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface GenerationHistoryItem {
+  job_id: string
+  status: string
+  created_at: string
+  updated_at: string
+  source_preview_url?: string | null
+  raw_result_download_url?: string | null
+  watermarked_result_download_url?: string | null
+  error_message: string
+}
+
+export interface QuotaSummary {
+  total_units: number
+  available_units: number
+  frozen_units: number
+  active_plan_name?: string | null
+  updated_at?: string | null
+}
+
+export interface PrivacyStatus {
+  has_privacy_agreement: boolean
+  privacy_accepted_at?: string | null
 }
 
 export interface GenerationUploadPayload {

@@ -8,6 +8,10 @@ from app.api.v1.styles import router as styles_router
 from app.api.v1.terms import router as terms_router
 from app.api.v1.promo_rules import router as promo_rules_router
 from app.api.v1.generation import router as generation_router
+from app.api.v1.quota import router as quota_router
+from app.api.v1.privacy import router as privacy_router
+from app.api.v1.generation_history import router as generation_history_router
+from app.api.v1.pricing_plans import router as pricing_plans_router
 
 router = APIRouter()
 router.include_router(health_router, tags=["health"])
@@ -19,3 +23,7 @@ router.include_router(promo_rules_router, tags=["promo-rules"])
 router.include_router(uploads_router, tags=["uploads"])
 router.include_router(tasks_router, tags=["tasks"])
 router.include_router(generation_router, tags=["generation"])
+router.include_router(quota_router, tags=["quota"])
+router.include_router(privacy_router, tags=["privacy"])
+router.include_router(generation_history_router, tags=["generation-history"])
+router.include_router(pricing_plans_router, tags=["pricing-plans"])

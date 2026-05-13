@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view class="page-my">
     <view class="header">
       <view class="avatar-placeholder">
@@ -10,31 +10,78 @@
       </view>
       <text v-else class="username">未登录</text>
     </view>
-    <view class="menu">
-      <view class="menu-item">
+
+    <view class="content">
+      <QuotaCard
+        :summary="quotaSummary"
+        :busy="quotaLoading"
+        action-text="刷新额度"
+        @action="loadPageData"
+      />
+
+      <view class="section-title">
         <text>我的作品</text>
-        <text class="arrow">→</text>
+        <text class="section-subtitle">下拉刷新查看最近生成记录</text>
       </view>
-      <view class="menu-item">
-        <text>额度明细</text>
-        <text class="arrow">→</text>
-      </view>
-      <view class="menu-item">
-        <text>关于我们</text>
-        <text class="arrow">→</text>
-      </view>
+      <WorksList
+        :items="generationStore.historyItems"
+        :refreshing="generationStore.loadingHistory"
+        @refresh="loadHistory"
+        @preview="previewItem"
+      />
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
+import { onPullDownRefresh } from '@dcloudio/uni-app'
+import QuotaCard from '@/components/quota/QuotaCard.vue'
+import WorksList from '@/components/works/WorksList.vue'
 import { useUserStore } from '@/stores/user'
+import { useGenerationStore } from '@/stores/generation'
+import { getQuotaSummary } from '@/api/quota'
+import type { QuotaSummary, GenerationHistoryItem } from '@/types/generation'
 
 const userStore = useUserStore()
+const generationStore = useGenerationStore()
+const quotaSummary = ref<QuotaSummary | null>(null)
+const quotaLoading = ref(false)
+
+async function loadQuotaSummary() {
+  quotaLoading.value = true
+  try {
+    quotaSummary.value = await getQuotaSummary()
+  } finally {
+    quotaLoading.value = false
+  }
+}
+
+async function loadHistory() {
+  await generationStore.loadHistory()
+}
+
+async function loadPageData() {
+  await Promise.all([loadQuotaSummary(), loadHistory()])
+}
+
+function previewItem(item: GenerationHistoryItem) {
+  const url = item.watermarked_result_download_url || item.raw_result_download_url || item.source_preview_url
+  if (!url) return
+  uni.previewImage({
+    urls: [url],
+    current: url,
+  })
+}
 
 onMounted(async () => {
   await userStore.ensureAuth()
+  await loadPageData()
+})
+
+onPullDownRefresh(() => {
+  loadPageData()
+    .finally(() => uni.stopPullDownRefresh())
 })
 </script>
 
@@ -43,7 +90,7 @@ onMounted(async () => {
   padding: 0;
 }
 .header {
-  background: linear-gradient(135deg, #1AAD19, #12B7F5);
+  background: linear-gradient(135deg, #1aad19, #12b7f5);
   padding: 60rpx 32rpx 40rpx;
   display: flex;
   align-items: center;
@@ -73,20 +120,21 @@ onMounted(async () => {
   color: rgba(255, 255, 255, 0.7);
   margin-top: 8rpx;
 }
-.menu {
-  margin-top: 24rpx;
-  background: #fff;
+.content {
+  padding: 24rpx 32rpx 40rpx;
 }
-.menu-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 32rpx;
-  border-bottom: 1rpx solid #f0f0f0;
-  font-size: 28rpx;
+.section-title {
+  margin: 24rpx 0 14rpx;
 }
-.arrow {
-  color: #ccc;
-  font-size: 32rpx;
+.section-title text {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 800;
+  color: #10291b;
+}
+.section-subtitle {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: rgba(16, 41, 27, 0.58);
 }
 </style>
