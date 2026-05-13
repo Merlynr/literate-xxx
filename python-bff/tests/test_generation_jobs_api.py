@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,30 @@ def override_tenant_dependency(app):
     app.dependency_overrides[deps.get_current_tenant_id] = lambda: TENANT_ID
     yield
     app.dependency_overrides.pop(deps.get_current_tenant_id, None)
+
+
+@pytest.fixture(autouse=True)
+def override_user_dependency(app):
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(
+        id=uuid.UUID("aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        tenant_id=TENANT_ID,
+    )
+    yield
+    app.dependency_overrides.pop(deps.get_current_user, None)
+
+
+@pytest.fixture(autouse=True)
+def override_db_dependency(app):
+    class FakeDB:
+        async def get(self, model, key):
+            return None
+
+    async def _override_get_db():
+        yield FakeDB()
+
+    app.dependency_overrides[deps.get_db] = _override_get_db
+    yield
+    app.dependency_overrides.pop(deps.get_db, None)
 
 
 @pytest.mark.asyncio
