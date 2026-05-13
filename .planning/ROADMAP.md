@@ -8,7 +8,7 @@ XX甄选 delivers AI-generated product promotional images via a WeChat Mini Prog
 
 - [ ] **Phase 1: Foundation & Infrastructure** - Backend skeleton, Celery/Redis/OSS infra, WeChat MP scaffold with domain whitelist
 - [x] **Phase 2: Auth, Data Layer & Admin CRUD** - WeChat login + tenant isolation, category/style/term/rule CRUD, admin UI
-- [ ] **Phase 3: AI Generation Pipeline** - Upload flow, Vision API, Image Gen, Celery worker pipeline, prompt engine, watermark, task lifecycle
+- [x] **Phase 3: AI Generation Pipeline** - Upload flow, Vision API, Image Gen, Celery worker pipeline, prompt engine, watermark, task lifecycle
 - [ ] **Phase 4: Quota, Billing & Frontend UX** - Quota system, complete wizard flow, task history, save to album, privacy compliance
 - [ ] **Phase 5: Hardening & Launch Prep** - Task monitoring, error codes, job watchdog, Sentry + Flower observability
 
@@ -59,12 +59,12 @@ Plans:
   3. Submitting the same client_request_id twice returns the same task without creating a duplicate or double-charging
   4. Generated results include both a watermarked image and a high-res raw image available for download via presigned URLs
   5. Changing admin rules after a task is created does not alter that task's frozen prompt snapshot (snapshot immutability verified)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md — Backend generation contracts, upload confirm, idempotent job creation, polling
+- [ ] 03-02-PLAN.md — DashScope/Wanxiang worker pipeline, prompt assembly, watermark, and OSS persistence
+- [ ] 03-03-PLAN.md — Generate page integration, progress/result UX, contract tests, and hardening
 
 ### Phase 4: Quota, Billing & Frontend UX
 **Goal**: The complete user journey works end-to-end in the WeChat Mini Program — from login through generation to saving results — with quota management ensuring proper resource accounting.
@@ -108,7 +108,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 0/3 | Not started | - |
 | 2. Auth, Data Layer & Admin CRUD | 3/3 | Complete | 2026-05-12 |
-| 3. AI Generation Pipeline | 0/3 | Not started | - |
+| 3. AI Generation Pipeline | 3/3 | Complete | 2026-05-13 |
 | 4. Quota, Billing & Frontend UX | 0/3 | Not started | - |
 | 5. Hardening & Launch Prep | 0/2 | Not started | - |
 
