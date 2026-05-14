@@ -18,6 +18,7 @@ from app.providers.base import (
     extract_first_image_url,
     json_safe,
 )
+from app.core.config import settings
 
 
 @dataclass
@@ -31,7 +32,7 @@ class DashScopeWanxiangImageGenProvider:
     max_poll_attempts: int = 40
 
     def _resolve_api_key(self) -> str:
-        api_key = self.api_key or os.getenv("DASHSCOPE_API_KEY", "").strip()
+        api_key = (self.api_key or settings.DASHSCOPE_API_KEY or os.getenv("DASHSCOPE_API_KEY", "")).strip()
         if not api_key:
             raise ProviderError("DASHSCOPE_API_KEY is required for DashScope image generation")
         return api_key
@@ -145,7 +146,7 @@ class DashScopeWanxiangImageGenProvider:
             watermark=watermark,
             n=n,
         )
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, trust_env=False) as client:
             submission = await self._submit_task(client, payload=payload)
             task_id = None
             if isinstance(submission, dict):

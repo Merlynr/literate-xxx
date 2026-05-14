@@ -18,6 +18,7 @@ from app.providers.base import (
     json_safe,
     parse_json_maybe,
 )
+from app.core.config import settings
 
 
 @dataclass
@@ -29,7 +30,7 @@ class DashScopeVisionProvider:
     timeout: float = 120.0
 
     def _resolve_api_key(self) -> str:
-        api_key = self.api_key or os.getenv("DASHSCOPE_API_KEY", "").strip()
+        api_key = (self.api_key or settings.DASHSCOPE_API_KEY or os.getenv("DASHSCOPE_API_KEY", "")).strip()
         if not api_key:
             raise ProviderError("DASHSCOPE_API_KEY is required for DashScope vision analysis")
         return api_key
@@ -78,7 +79,7 @@ class DashScopeVisionProvider:
             "Authorization": f"Bearer {self._resolve_api_key()}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, trust_env=False) as client:
             response = await client.post(
                 f"{self.base_url.rstrip('/')}{DEFAULT_DASHSCOPE_VISION_PATH}",
                 headers=headers,

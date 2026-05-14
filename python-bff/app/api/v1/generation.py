@@ -16,7 +16,9 @@ from app.services.generation_jobs import (
     create_generation_job,
     generation_asset_download_url,
     get_generation_job,
+    record_job_event,
 )
+from app.workers.celery_app import celery_app
 
 router = APIRouter()
 
@@ -171,6 +173,7 @@ async def create_job(
             category_id=req.category_id,
             style_id=req.style_id,
             prompt_hint=req.prompt_hint,
+            schedule_task=False,
         )
     except HTTPException:
         raise
@@ -179,6 +182,26 @@ async def create_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    await db.commit()
+    result = celery_app.send_task("generation.process", kwargs={"job_id": str(job.id)})
+    job.task_id = result.id
+    db.add(job)
+    await record_job_event(
+        db,
+        tenant_id=tenant_id,
+        job_id=job.id,
+        event_type="job.queued",
+        message="Generation job queued",
+        payload={
+            "client_request_id": req.client_request_id,
+            "source_asset_id": str(job.source_asset_id),
+            "category_id": str(job.category_id) if job.category_id else None,
+            "style_id": str(job.style_id) if job.style_id else None,
+            "task_id": job.task_id,
+        },
+    )
+    await db.commit()
+    await db.refresh(job)
     source_asset = await db.get(GenerationAsset, job.source_asset_id)
     source_preview_url = generation_asset_download_url(source_asset) if source_asset else None
     response = _job_response(job, source_preview_url=source_preview_url)

@@ -1,0 +1,20 @@
+{
+  "name": "xxzx-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XX甄选 - AIGC 商品宣传图生成平台",
+  "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File start.ps1",
+    "start:bat": "start.bat",
+    "start:backend": "powershell -ExecutionPolicy Bypass -File start.ps1 -BackendOnly",
+    "start:frontend": "powershell -ExecutionPolicy Bypass -File start.ps1 -FrontendOnly",
+    "dev": "npm run start",
+    "dev:backend": "cd python-bff && .venv\\Scripts\\activate && uvicorn app.main:app --reload",
+    "dev:frontend": "cd wx-fe && npm run dev:mp-weixin",
+    "install:all": "cd python-bff && pip install -e . && cd ../wx-fe && npm install",
+    "test:backend": "cd python-bff && pytest",
+    "test:frontend": "cd wx-fe && npm test"
+  },
+  "keywords": ["aigc", "product-image", "wechat-miniprogram"],
+  "license": "private"
+}

@@ -228,6 +228,9 @@ onMounted(async () => {
   position: relative;
   min-height: 100vh;
   padding: 24rpx 24rpx 60rpx;
+  box-sizing: border-box;
+  width: 100%;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(185, 139, 42, 0.2), transparent 32%),
     radial-gradient(circle at top right, rgba(31, 93, 58, 0.16), transparent 28%),
@@ -288,6 +291,7 @@ onMounted(async () => {
 .selection-grid {
   display: grid;
   gap: 20rpx;
+  min-width: 0;
 }
 .section {
   padding: 24rpx;
@@ -295,6 +299,7 @@ onMounted(async () => {
   background: rgba(255, 255, 255, 0.7);
   border: 1rpx solid rgba(18, 48, 32, 0.08);
   box-shadow: 0 16rpx 36rpx rgba(38, 60, 44, 0.07);
+  min-width: 0;
 }
 .section-head {
   display: flex;
@@ -313,7 +318,10 @@ onMounted(async () => {
 }
 .chips,
 .style-strip {
+  display: block;
+  width: 100%;
   white-space: nowrap;
+  overflow-x: auto;
 }
 .chip {
   display: inline-flex;
@@ -392,10 +400,12 @@ onMounted(async () => {
 .cta-bar {
   display: flex;
   gap: 14rpx;
+  min-width: 0;
 }
 .primary,
 .secondary {
   flex: 1;
+  min-width: 0;
   border-radius: 20rpx;
   font-size: 28rpx;
   font-weight: 800;

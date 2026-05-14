@@ -38,12 +38,30 @@ def override_db_dependency(app):
         async def get(self, model, key):
             return None
 
+        def add(self, obj):
+            return None
+
+        async def flush(self):
+            return None
+
+        async def commit(self):
+            return None
+
+        async def refresh(self, obj):
+            return None
+
     async def _override_get_db():
         yield FakeDB()
 
     app.dependency_overrides[deps.get_db] = _override_get_db
     yield
     app.dependency_overrides.pop(deps.get_db, None)
+
+
+@pytest.fixture(autouse=True)
+def override_celery_send_task(monkeypatch):
+    fake_result = SimpleNamespace(id="task-queued-1")
+    monkeypatch.setattr("app.api.v1.generation.celery_app.send_task", lambda *args, **kwargs: fake_result)
 
 
 @pytest.mark.asyncio

@@ -40,7 +40,7 @@ async def _load_source_asset(db, job: GenerationJob) -> GenerationAsset:
 
 
 async def _download_image_bytes(url: str) -> tuple[bytes, str]:
-    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True, trust_env=False) as client:
         response = await client.get(url)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "image/png").split(";", 1)[0].strip()

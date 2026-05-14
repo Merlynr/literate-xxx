@@ -1,7 +1,7 @@
-﻿import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { login as apiLogin, refreshToken as apiRefresh, getMe, devLogin as apiDevLogin } from '../api/auth'
-import { setToken } from '../api/request'
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
+import { devLogin as apiDevLogin, getMe, login as apiLogin, refreshToken as apiRefresh } from '../api/auth'
+import { clearTokens, setTokenPair } from '../api/request'
 
 const ACCESS_TOKEN_KEY = 'xxzx_access_token'
 const REFRESH_TOKEN_KEY = 'xxzx_refresh_token'
@@ -23,25 +23,20 @@ export const useUserStore = defineStore('user', () => {
     privacyAcceptedAt.value = profile.privacy_accepted_at || ''
   }
 
-  /** Load tokens from storage on app start */
   function loadTokens() {
     accessToken.value = uni.getStorageSync(ACCESS_TOKEN_KEY) || ''
     refreshTokenValue.value = uni.getStorageSync(REFRESH_TOKEN_KEY) || ''
-    if (accessToken.value) {
-      setToken(accessToken.value)
-    }
+    setTokenPair(accessToken.value, refreshTokenValue.value)
   }
 
-  /** Persist tokens to storage */
   function saveTokens(access: string, refresh: string) {
     accessToken.value = access
     refreshTokenValue.value = refresh
     uni.setStorageSync(ACCESS_TOKEN_KEY, access)
     uni.setStorageSync(REFRESH_TOKEN_KEY, refresh)
-    setToken(access)
+    setTokenPair(access, refresh)
   }
 
-  /** Clear all auth state */
   function clearAuth() {
     accessToken.value = ''
     refreshTokenValue.value = ''
@@ -51,10 +46,9 @@ export const useUserStore = defineStore('user', () => {
     privacyAcceptedAt.value = ''
     uni.removeStorageSync(ACCESS_TOKEN_KEY)
     uni.removeStorageSync(REFRESH_TOKEN_KEY)
-    setToken('')
+    clearTokens()
   }
 
-  /** WeChat login: wx.login -> backend -> save tokens */
   async function wxLogin(): Promise<boolean> {
     return new Promise((resolve) => {
       uni.login({
@@ -63,7 +57,6 @@ export const useUserStore = defineStore('user', () => {
           try {
             const tokens = await apiLogin(loginRes.code)
             saveTokens(tokens.access_token, tokens.refresh_token)
-            // Fetch user profile
             const profile = await getMe()
             applyProfile(profile)
             resolve(true)
@@ -99,7 +92,6 @@ export const useUserStore = defineStore('user', () => {
     })
   }
 
-  /** Try silent token refresh. Returns true if successful. */
   async function tryRefreshToken(): Promise<boolean> {
     if (!refreshTokenValue.value) return false
     try {
@@ -113,7 +105,6 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  /** Check WeChat session validity; re-login if expired */
   async function checkAndRelogin(): Promise<boolean> {
     return new Promise((resolve) => {
       uni.checkSession({
@@ -128,13 +119,11 @@ export const useUserStore = defineStore('user', () => {
     })
   }
 
-  /** Ensure user is authenticated: load tokens -> check session -> refresh if needed */
   async function ensureAuth(): Promise<boolean> {
     loadTokens()
     if (!accessToken.value) {
       return await wxLogin()
     }
-    // Check WeChat session
     const sessionOk = await checkAndRelogin()
     if (!sessionOk) return false
     const profile = await getMe()
@@ -143,8 +132,20 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    accessToken, refreshTokenValue, nickname, tenantId, userId, privacyAcceptedAt, isLoggedIn, hasPrivacyAgreement,
-    loadTokens, saveTokens, clearAuth, wxLogin, tryRefreshToken,
-    checkAndRelogin, ensureAuth,
+    accessToken,
+    refreshTokenValue,
+    nickname,
+    tenantId,
+    userId,
+    privacyAcceptedAt,
+    isLoggedIn,
+    hasPrivacyAgreement,
+    loadTokens,
+    saveTokens,
+    clearAuth,
+    wxLogin,
+    tryRefreshToken,
+    checkAndRelogin,
+    ensureAuth,
   }
 })

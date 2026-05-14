@@ -20,6 +20,13 @@ interface ApiResponse<T = unknown> {
   message: string
 }
 
+interface TokenResponse {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  expires_in: number
+}
+
 function normalizeResponse<T>(payload: unknown): ApiResponse<T> {
   if (
     payload &&
@@ -42,28 +49,52 @@ function normalizeResponse<T>(payload: unknown): ApiResponse<T> {
 const BASE_URL = 'http://localhost:8000/api/v1'
 
 let authToken = ''
+let refreshTokenValue = ''
 
 export function setToken(token: string) {
   authToken = token
+}
+
+export function clearTokens() {
+  authToken = ''
+  refreshTokenValue = ''
+}
+
+export function setTokenPair(accessToken: string, refreshToken: string) {
+  authToken = accessToken
+  refreshTokenValue = refreshToken
 }
 
 export function getToken() {
   return authToken
 }
 
-/** Lazy import to avoid circular dependency */
 async function tryRefreshAndRetry<T>(options: RequestOptions): Promise<ApiResponse<T>> {
-  // Dynamically import the store
-  const { useUserStore } = await import('../stores/user')
-  const userStore = useUserStore()
-  const refreshed = await userStore.tryRefreshToken()
-  if (refreshed) {
-    // Retry original request with new token
-    return request<T>({ ...options, _retry: true })
+  if (!refreshTokenValue) {
+    uni.showToast({ title: '请重新登录', icon: 'none' })
+    return Promise.reject(new Error('Token refresh failed'))
   }
-  // Refresh failed — redirect to login
-  uni.showToast({ title: '请重新登录', icon: 'none' })
-  return Promise.reject(new Error('Token refresh failed'))
+  const refreshed = await new Promise<TokenResponse>((resolve, reject) => {
+    uni.request({
+      url: `${BASE_URL}/auth/refresh`,
+      method: 'POST',
+      data: { refresh_token: refreshTokenValue },
+      header: { 'Content-Type': 'application/json' },
+      success: (res) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const payload = normalizeResponse<TokenResponse>(res.data)
+          resolve(payload.data)
+          return
+        }
+        reject(new Error('Token refresh failed'))
+      },
+      fail: reject,
+    })
+  })
+  setTokenPair(refreshed.access_token, refreshed.refresh_token)
+  uni.setStorageSync('xxzx_access_token', refreshed.access_token)
+  uni.setStorageSync('xxzx_refresh_token', refreshed.refresh_token)
+  return request<T>({ ...options, _retry: true })
 }
 
 export function request<T = unknown>(options: RequestOptions): Promise<ApiResponse<T>> {
