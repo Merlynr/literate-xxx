@@ -17,7 +17,7 @@ def get_s3_client():
             signature_version="s3v4",
             s3={
                 "payload_signing_enabled": False,
-                "addressing_style": "virtual",
+                "addressing_style": "path",
             },
         ),
     )
@@ -51,9 +51,6 @@ def generate_presigned_upload_url(
         },
         ExpiresIn=expires_in,
     )
-    # Aliyun OSS 需要移除 aws-chunked 相关签名头
-    url = url.replace("x-amz-content-sha256=STREAMING-AWS4-HMAC-SHA256-PAYLOAD", 
-                      "x-amz-content-sha256=UNSIGNED-PAYLOAD")
     return url
 
 
