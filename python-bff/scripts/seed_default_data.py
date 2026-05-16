@@ -27,29 +27,59 @@ DEFAULT_TENANT_NAME = "Local Dev Tenant"
 
 
 DEFAULT_CATEGORIES = [
+    # 土豆类目
     {"category_code": "red_potato", "name": "红皮土豆", "sort_order": 1},
     {"category_code": "black_pearl_potato", "name": "黑珍珠土豆", "sort_order": 2},
     {"category_code": "yellow_potato", "name": "黄心土豆", "sort_order": 3},
     {"category_code": "mini_potato", "name": "小土豆", "sort_order": 4},
     {"category_code": "potato_gift_box", "name": "土豆礼盒", "sort_order": 5},
+    # 药品类目
+    {"category_code": "cold_medicine", "name": "感冒药", "sort_order": 10},
+    {"category_code": "digestive_medicine", "name": "肠胃药", "sort_order": 11},
+    {"category_code": "pain_reliever", "name": "止痛药", "sort_order": 12},
+    {"category_code": "skin_cream", "name": "皮肤药膏", "sort_order": 13},
+    {"category_code": "vitamin_supplement", "name": "维生素保健品", "sort_order": 14},
+    {"category_code": "traditional_chinese", "name": "中成药", "sort_order": 15},
+    {"category_code": "antibiotic", "name": "抗生素", "sort_order": 16},
+    {"category_code": "children_medicine", "name": "儿童用药", "sort_order": 17},
 ]
 
 DEFAULT_STYLES = [
-    {"name": "清新田园", "sort_order": 1},
-    {"name": "高级电商", "sort_order": 2},
-    {"name": "自然原产地", "sort_order": 3},
-    {"name": "节日礼盒", "sort_order": 4},
+    # 土豆风格
+    {"name": "清新田园", "cover_image_url": "", "sort_order": 1},
+    {"name": "高级电商", "cover_image_url": "", "sort_order": 2},
+    {"name": "自然原产地", "cover_image_url": "", "sort_order": 3},
+    {"name": "节日礼盒", "cover_image_url": "", "sort_order": 4},
+    # 药品风格
+    {"name": "专业医药", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/medical_professional.jpg", "sort_order": 10},
+    {"name": "健康养生", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/health_wellness.jpg", "sort_order": 11},
+    {"name": "家庭常备", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/family_essential.jpg", "sort_order": 12},
+    {"name": "科技医药", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/tech_medical.jpg", "sort_order": 13},
+    {"name": "中药养生", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/tcm_wellness.jpg", "sort_order": 14},
+    {"name": "儿童健康", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/children_health.jpg", "sort_order": 15},
 ]
 
 DEFAULT_TERMS = [
+    # 土豆文案
     {"type": "positive", "content": "新鲜现采", "weight": 12, "sort_order": 1},
     {"type": "positive", "content": "产地直供", "weight": 11, "sort_order": 2},
     {"type": "positive", "content": "颗粒饱满", "weight": 10, "sort_order": 3},
     {"type": "positive", "content": "沙糯粉面", "weight": 10, "sort_order": 4},
     {"type": "positive", "content": "适合炖煮", "weight": 9, "sort_order": 5},
+    # 药品文案
+    {"type": "positive", "content": "国药准字", "weight": 15, "sort_order": 10},
+    {"type": "positive", "content": "正品保障", "weight": 14, "sort_order": 11},
+    {"type": "positive", "content": "快速见效", "weight": 13, "sort_order": 12},
+    {"type": "positive", "content": "温和安全", "weight": 12, "sort_order": 13},
+    {"type": "positive", "content": "家庭常备", "weight": 11, "sort_order": 14},
+    {"type": "positive", "content": "专业推荐", "weight": 11, "sort_order": 15},
+    {"type": "positive", "content": "口碑好评", "weight": 10, "sort_order": 16},
+    {"type": "positive", "content": "买二送一", "weight": 10, "sort_order": 17},
+    # 通用负面词
     {"type": "negative", "content": "模糊", "weight": 10, "sort_order": 1},
     {"type": "negative", "content": "低清", "weight": 10, "sort_order": 2},
     {"type": "negative", "content": "噪点", "weight": 10, "sort_order": 3},
+    # 通用前缀
     {"type": "prefix", "content": "突出商品主体", "weight": 10, "sort_order": 1},
     {"type": "prefix", "content": "保留包装识别信息", "weight": 10, "sort_order": 2},
     {"type": "brand", "content": "XX甄选", "weight": 10, "sort_order": 1},
@@ -118,13 +148,17 @@ async def _upsert_style(session, tenant_id: uuid.UUID, payload: dict) -> str:
         select(Style).where(Style.tenant_id == tenant_id, Style.name == payload["name"])
     )
     if existing:
+        # 更新封面图 URL（如果提供了新值）
+        if payload.get("cover_image_url") and existing.cover_image_url != payload["cover_image_url"]:
+            existing.cover_image_url = payload["cover_image_url"]
+            return "updated"
         return "unchanged"
 
     session.add(
         Style(
             tenant_id=tenant_id,
             name=payload["name"],
-            cover_image_url="",
+            cover_image_url=payload.get("cover_image_url", ""),
             rule_version=1,
             sort_order=payload["sort_order"],
             is_active=True,

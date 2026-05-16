@@ -1,4 +1,4 @@
-import request, { getToken } from './request'
+import request, { getToken, BASE_URL } from './request'
 import type {
   GenerationAssetConfirmPayload,
   GenerationAssetResponse,
@@ -83,7 +83,7 @@ async function uploadFileViaBackend(
   const token = getToken()
   return await new Promise((resolve, reject) => {
     uni.uploadFile({
-      url: 'http://localhost:8000/api/v1/uploads/direct',
+      url: `${BASE_URL}/uploads/direct`,
       filePath,
       name: 'file',
       header: token ? { Authorization: `Bearer ${token}` } : {},
