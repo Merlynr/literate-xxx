@@ -32,6 +32,7 @@ LOG_DIR="/var/log/xxzx"
 BACKEND_LOG="${LOG_DIR}/backend.log"
 CELERY_LOG="${LOG_DIR}/celery.log"
 CELERY_BEAT_LOG="${LOG_DIR}/celery_beat.log"
+STARTUP_LOG="${LOG_DIR}/startup.log"
 
 # PID 文件
 PID_DIR="/var/run/xxzx"
@@ -44,15 +45,58 @@ CELERY_BEAT_PID="${PID_DIR}/celery_beat.pid"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
-log_info()    { echo -e "${GREEN}[INFO]${NC}  $1"; }
-log_warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
-log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
+# 获取时间戳
+timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+# 写入日志文件 (带时间戳)
+log_to_file() {
+    local level="$1"
+    local msg="$2"
+    echo "[$(timestamp)] [${level}] ${msg}" >> "${STARTUP_LOG}"
+}
+
+# 控制台输出 + 日志文件
+log_info() {
+    echo -e "${GREEN}[INFO]${NC}  $1"
+    log_to_file "INFO" "$1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC}  $1"
+    log_to_file "WARN" "$1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    log_to_file "ERROR" "$1"
+}
+
+log_step() {
+    echo -e "${CYAN}[STEP]${NC}  $1"
+    log_to_file "STEP" "$1"
+}
 
 die() {
     log_error "$1"
     exit 1
+}
+
+# 初始化日志文件
+init_log() {
+    mkdir -p "${LOG_DIR}"
+    # 清空或创建日志文件，写入头部
+    cat > "${STARTUP_LOG}" <<EOF
+============================================
+ XX甄选 - 启动日志
+ 开始时间: $(timestamp)
+============================================
+EOF
+    log_info "日志文件: ${STARTUP_LOG}"
 }
 
 # ---------- 环境检查 ----------
@@ -263,37 +307,67 @@ stop_service() {
     local name="$1"
     local pid_file="$2"
 
-    if ! is_running "${pid_file}"; then
-        log_info "${name} 未运行"
-        return 0
+    if [[ -f "${pid_file}" ]]; then
+        local pid
+        pid=$(cat "${pid_file}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            log_info "停止 ${name} (PID: ${pid})..."
+            kill "${pid}" 2>/dev/null || true
+
+            # 等待进程退出 (最多 10 秒)
+            local count=0
+            while kill -0 "${pid}" 2>/dev/null && (( count < 10 )); do
+                sleep 1
+                ((count++))
+            done
+
+            # 强制终止
+            if kill -0 "${pid}" 2>/dev/null; then
+                log_warn "强制终止 ${name}..."
+                kill -9 "${pid}" 2>/dev/null || true
+            fi
+        fi
+        rm -f "${pid_file}"
     fi
+}
 
-    local pid
-    pid=$(cat "${pid_file}")
-    log_info "停止 ${name} (PID: ${pid})..."
+# 强制停止所有相关进程 (即使 PID 文件丢失)
+force_stop_all() {
+    log_step "清理残留进程..."
 
-    kill "${pid}" 2>/dev/null || true
+    # 按进程名/命令行模式匹配并杀掉
+    local patterns=(
+        "uvicorn app.main:app"
+        "celery.*celery_app"
+        "celery.*worker"
+        "celery.*beat"
+    )
 
-    # 等待进程退出 (最多 10 秒)
-    local count=0
-    while kill -0 "${pid}" 2>/dev/null && (( count < 10 )); do
-        sleep 1
-        ((count++))
+    for pattern in "${patterns[@]}"; do
+        local pids
+        pids=$(pgrep -f "${pattern}" 2>/dev/null || true)
+        if [[ -n "${pids}" ]]; then
+            log_warn "发现残留进程，终止: ${pattern}"
+            echo "${pids}" | xargs kill -9 2>/dev/null || true
+        fi
     done
 
-    if kill -0 "${pid}" 2>/dev/null; then
-        log_warn "强制终止 ${name}..."
-        kill -9 "${pid}" 2>/dev/null || true
-    fi
+    # 清理 PID 文件
+    rm -f "${BACKEND_PID}" "${CELERY_PID}" "${CELERY_BEAT_PID}"
 
-    rm -f "${pid_file}"
-    log_info "${name} 已停止"
+    # 清理 Celery 临时文件
+    rm -f /var/run/xxzx/celerybeat-schedule 2>/dev/null || true
+
+    log_info "进程清理完成"
 }
 
 start_all() {
-    log_info "=========================================="
-    log_info "  XX甄选 - 后端服务启动"
-    log_info "=========================================="
+    init_dirs
+    init_log
+
+    log_step "=========================================="
+    log_step "  XX甄选 - 后端服务启动"
+    log_step "=========================================="
 
     check_root
     check_python
@@ -301,33 +375,37 @@ start_all() {
     check_dependencies
     check_env_file
     check_services
-    init_dirs
 
     start_backend
     start_celery_worker
     # start_celery_beat  # 如需定时任务，取消此行注释
 
-    echo ""
-    log_info "=========================================="
-    log_info "  所有服务已启动"
-    log_info "=========================================="
-    log_info "  后端 API:    http://localhost:${PORT}"
-    log_info "  API 文档:    http://localhost:${PORT}/docs"
-    log_info "  健康检查:    http://localhost:${PORT}/api/v1/health"
-    log_info "  日志目录:    ${LOG_DIR}"
-    log_info "=========================================="
+    log_step ""
+    log_step "=========================================="
+    log_step "  所有服务已启动"
+    log_step "=========================================="
+    log_step "  后端 API:    http://localhost:${PORT}"
+    log_step "  API 文档:    http://localhost:${PORT}/docs"
+    log_step "  健康检查:    http://localhost:${PORT}/api/v1/health"
+    log_step "  应用日志:    ${LOG_DIR}"
+    log_step "  启动日志:    ${STARTUP_LOG}"
+    log_step "=========================================="
 }
 
 stop_all() {
-    log_info "=========================================="
-    log_info "  XX甄选 - 停止服务"
-    log_info "=========================================="
+    log_step "=========================================="
+    log_step "  XX甄选 - 停止服务"
+    log_step "=========================================="
 
     stop_service "Celery Beat" "${CELERY_BEAT_PID}"
     stop_service "Celery Worker" "${CELERY_PID}"
     stop_service "FastAPI 后端" "${BACKEND_PID}"
 
-    log_info "所有服务已停止"
+    # 强制清理残留进程
+    force_stop_all
+
+    log_step "所有服务已停止"
+    log_to_file "INFO" "所有服务已停止"
 }
 
 status_all() {
@@ -357,6 +435,8 @@ status_all() {
         log_warn "Celery Beat:   未运行"
     fi
 
+    echo ""
+    echo "日志文件: ${STARTUP_LOG}"
     echo "=========================================="
 }
 
@@ -370,8 +450,21 @@ case "${1:-start}" in
         stop_all
         ;;
     restart)
-        stop_all
-        sleep 2
+        log_step "=========================================="
+        log_step "  XX甄选 - 重启服务"
+        log_step "=========================================="
+
+        # 先停止所有服务
+        stop_service "Celery Beat" "${CELERY_BEAT_PID}"
+        stop_service "Celery Worker" "${CELERY_PID}"
+        stop_service "FastAPI 后端" "${BACKEND_PID}"
+        force_stop_all
+
+        # 等待端口释放
+        log_step "等待端口释放..."
+        sleep 3
+
+        # 重新启动
         start_all
         ;;
     status)
@@ -379,6 +472,11 @@ case "${1:-start}" in
         ;;
     *)
         echo "用法: $0 {start|stop|restart|status}"
+        echo ""
+        echo "  start   - 启动所有服务"
+        echo "  stop    - 停止所有服务"
+        echo "  restart - 重启所有服务 (强制清理旧进程)"
+        echo "  status  - 查看服务状态"
         exit 1
         ;;
 esac
