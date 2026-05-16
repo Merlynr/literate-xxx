@@ -130,3 +130,4 @@ xxzx/
 | 缓存/队列 | Redis |
 | 对象存储 | MinIO/S3 |
 | AI | GPT-4o-mini + DashScope |
+"# literate-xxx" 
