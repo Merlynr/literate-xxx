@@ -13,7 +13,7 @@ dependencies = [
     "pydantic-settings>=2.7",
     "celery[redis]>=5.4",
     "redis>=5.2",
-    "boto3>=1.37",
+    "oss2>=2.18",
     "pillow>=11.0",
     "dashscope",
     "loguru>=0.7",
