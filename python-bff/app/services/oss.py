@@ -79,6 +79,5 @@ def upload_bytes(data: bytes, key: str, content_type: str = "image/jpeg") -> str
         Key=key,
         Body=data,
         ContentType=content_type,
-        ContentMD5="",
     )
     return key
