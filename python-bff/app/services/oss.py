@@ -13,7 +13,13 @@ def get_s3_client():
         aws_access_key_id=settings.S3_ACCESS_KEY,
         aws_secret_access_key=settings.S3_SECRET_KEY,
         region_name=settings.S3_REGION or None,
-        config=BotoConfig(signature_version="s3v4"),
+        config=BotoConfig(
+            signature_version="s3v4",
+            s3={
+                "payload_signing_enabled": False,
+                "addressing_style": "virtual",
+            },
+        ),
     )
 
 
@@ -45,6 +51,9 @@ def generate_presigned_upload_url(
         },
         ExpiresIn=expires_in,
     )
+    # Aliyun OSS 需要移除 aws-chunked 相关签名头
+    url = url.replace("x-amz-content-sha256=STREAMING-AWS4-HMAC-SHA256-PAYLOAD", 
+                      "x-amz-content-sha256=UNSIGNED-PAYLOAD")
     return url
 
 
@@ -73,5 +82,6 @@ def upload_bytes(data: bytes, key: str, content_type: str = "image/jpeg") -> str
         Key=key,
         Body=data,
         ContentType=content_type,
+        ContentMD5="",
     )
     return key

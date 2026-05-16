@@ -46,7 +46,7 @@ function normalizeResponse<T>(payload: unknown): ApiResponse<T> {
 
 // BFF base URL — update per environment
 // WeChat Mini Program requires HTTPS in production; HTTP OK for dev
-const BASE_URL = 'http://8.141.7.56:8000/api/v1'
+const BASE_URL = 'http://localhost:8000/api/v1'
 
 let authToken = ''
 let refreshTokenValue = ''
