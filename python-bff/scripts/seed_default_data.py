@@ -52,7 +52,7 @@ DEFAULT_STYLES = [
     {"name": "节日礼盒", "cover_image_url": "", "sort_order": 4},
     # 药品风格
     {"name": "专业医药", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/medical_professional.jpg", "sort_order": 10},
-    {"name": "健康养生", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/health_wellness.jpg", "sort_order": 11},
+    {"name": "健康养生", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/test_folder/demo3.jpg", "sort_order": 11},
     {"name": "家庭常备", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/family_essential.jpg", "sort_order": 12},
     {"name": "科技医药", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/tech_medical.jpg", "sort_order": 13},
     {"name": "中药养生", "cover_image_url": "https://ai-pi.oss-cn-beijing.aliyuncs.com/styles/tcm_wellness.jpg", "sort_order": 14},

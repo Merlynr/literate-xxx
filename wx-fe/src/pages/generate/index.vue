@@ -53,7 +53,9 @@
               :class="{ active: generationStore.selectedStyleId === style.id }"
               @tap="generationStore.selectedStyleId = style.id"
             >
-              <image v-if="style.cover_image_url" class="style-cover" :src="style.cover_image_url" mode="aspectFill" />
+              <view v-if="style.cover_image_url" class="style-cover-wrap">
+                <image class="style-cover" :src="style.cover_image_url" mode="aspectFill" />
+              </view>
               <view class="style-fallback" v-else>风格</view>
               <text class="style-name">{{ style.name }}</text>
             </view>
@@ -353,12 +355,19 @@ onMounted(async () => {
   box-shadow: 0 16rpx 34rpx rgba(31, 93, 58, 0.16);
   border-color: rgba(31, 93, 58, 0.22);
 }
-.style-cover,
+.style-cover-wrap {
+  width: 200rpx;
+  height: 220rpx;
+  overflow: hidden;
+}
+.style-cover {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .style-fallback {
   width: 200rpx;
   height: 220rpx;
-}
-.style-fallback {
   display: flex;
   align-items: center;
   justify-content: center;
