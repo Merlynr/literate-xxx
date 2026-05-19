@@ -24,3 +24,4 @@ wx-fe/.hbuilderx/
 # OS
 Thumbs.db
 .DS_Store
+wx-fe/package-lock.json
