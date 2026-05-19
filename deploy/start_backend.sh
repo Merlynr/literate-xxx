@@ -11,7 +11,8 @@ set -euo pipefail
 # ---------- 配置区域 ----------
 
 # 项目根目录 (脚本所在目录的上级)
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_DIR="${PROJECT_ROOT}/python-bff"
 
 # Python (自动检测，优先使用 python3.11，其次 python3)
@@ -86,14 +87,14 @@ die() {
     exit 1
 }
 
-# 初始化日志文件
+# 初始化日志文件 (追加模式，不清空历史日志)
 init_log() {
     mkdir -p "${LOG_DIR}"
-    # 清空或创建日志文件，写入头部
-    cat > "${STARTUP_LOG}" <<EOF
+    cat >> "${STARTUP_LOG}" <<EOF
+
 ============================================
  XX甄选 - 启动日志
- 开始时间: $(timestamp)
+ 时间: $(timestamp)
 ============================================
 EOF
     log_info "日志文件: ${STARTUP_LOG}"
@@ -251,6 +252,7 @@ start_backend() {
         --port "${PORT}" \
         --workers "${WORKERS}" \
         --log-level "${LOG_LEVEL}" \
+        --log-config "${SCRIPT_DIR}/log_config.yaml" \
         --access-log \
         >> "${BACKEND_LOG}" 2>&1 &
 
@@ -361,6 +363,17 @@ force_stop_all() {
     log_info "进程清理完成"
 }
 
+# 仅启动服务 (不做环境检查，用于 restart)
+start_services() {
+    init_dirs
+    init_log
+
+    start_backend
+    start_celery_worker
+    # start_celery_beat  # 如需定时任务，取消此行注释
+}
+
+# 完整启动 (含环境检查，用于首次 start)
 start_all() {
     init_dirs
     init_log
@@ -376,9 +389,7 @@ start_all() {
     check_env_file
     check_services
 
-    start_backend
-    start_celery_worker
-    # start_celery_beat  # 如需定时任务，取消此行注释
+    start_services
 
     log_step ""
     log_step "=========================================="
@@ -464,8 +475,12 @@ case "${1:-start}" in
         log_step "等待端口释放..."
         sleep 3
 
-        # 重新启动
-        start_all
+        # 重新启动 (跳过环境检查)
+        start_services
+
+        log_step "=========================================="
+        log_step "  重启完成"
+        log_step "=========================================="
         ;;
     status)
         status_all

@@ -2,7 +2,8 @@
 # FastAPI 启动包装脚本 - 用于 systemd
 set -euo pipefail
 
-PROJECT_DIR="/opt/xxzx/python-bff"
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${DEPLOY_DIR}/../python-bff"
 cd "${PROJECT_DIR}"
 
 # 激活虚拟环境
@@ -20,4 +21,5 @@ exec python -m uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8000 \
     --workers 2 \
-    --log-level info
+    --log-level info \
+    --log-config "${DEPLOY_DIR}/log_config.yaml"
