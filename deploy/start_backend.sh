@@ -374,10 +374,18 @@ force_stop_all() {
     log_info "进程清理完成"
 }
 
-# 仅启动服务 (不做环境检查，用于 restart)
+# 仅启动服务 (不做环境检查，用于 restart/watchdog)
 start_services() {
     init_dirs
     init_log
+
+    # 激活虚拟环境 (restart/watchdog 跳过 check_venv，需要手动激活)
+    if [[ -f "${VENV_BIN}/activate" ]]; then
+        source "${VENV_BIN}/activate"
+    else
+        log_error "虚拟环境不存在: ${VENV_BIN}/activate"
+        return 1
+    fi
 
     start_backend
     start_celery_worker
