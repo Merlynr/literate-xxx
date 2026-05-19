@@ -227,8 +227,8 @@ is_running() {
     local pid_file="$1"
     if [[ -f "${pid_file}" ]]; then
         local pid
-        pid=$(cat "${pid_file}")
-        if kill -0 "${pid}" 2>/dev/null; then
+        pid=$(cat "${pid_file}" 2>/dev/null || echo "")
+        if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
             return 0
         fi
     fi
@@ -237,7 +237,7 @@ is_running() {
 
 start_backend() {
     if is_running "${BACKEND_PID}"; then
-        log_warn "FastAPI 后端已在运行 (PID: $(cat "${BACKEND_PID}"))"
+        log_warn "FastAPI 后端已在运行 (PID: $(cat "${BACKEND_PID}" 2>/dev/null || echo "?"))"
         return 0
     fi
 
@@ -264,7 +264,7 @@ start_backend() {
 
 start_celery_worker() {
     if is_running "${CELERY_PID}"; then
-        log_warn "Celery Worker 已在运行 (PID: $(cat "${CELERY_PID}"))"
+        log_warn "Celery Worker 已在运行 (PID: $(cat "${CELERY_PID}" 2>/dev/null || echo "?"))"
         return 0
     fi
 
@@ -286,7 +286,7 @@ start_celery_worker() {
 
 start_celery_beat() {
     if is_running "${CELERY_BEAT_PID}"; then
-        log_warn "Celery Beat 已在运行 (PID: $(cat "${CELERY_BEAT_PID}"))"
+        log_warn "Celery Beat 已在运行 (PID: $(cat "${CELERY_BEAT_PID}" 2>/dev/null || echo "?"))"
         return 0
     fi
 
@@ -309,28 +309,39 @@ stop_service() {
     local name="$1"
     local pid_file="$2"
 
-    if [[ -f "${pid_file}" ]]; then
-        local pid
-        pid=$(cat "${pid_file}")
-        if kill -0 "${pid}" 2>/dev/null; then
-            log_info "停止 ${name} (PID: ${pid})..."
-            kill "${pid}" 2>/dev/null || true
-
-            # 等待进程退出 (最多 10 秒)
-            local count=0
-            while kill -0 "${pid}" 2>/dev/null && (( count < 10 )); do
-                sleep 1
-                ((count++))
-            done
-
-            # 强制终止
-            if kill -0 "${pid}" 2>/dev/null; then
-                log_warn "强制终止 ${name}..."
-                kill -9 "${pid}" 2>/dev/null || true
-            fi
-        fi
-        rm -f "${pid_file}"
+    if [[ ! -f "${pid_file}" ]]; then
+        return 0
     fi
+
+    local pid
+    pid=$(cat "${pid_file}" 2>/dev/null || echo "")
+    if [[ -z "${pid}" ]]; then
+        rm -f "${pid_file}"
+        return 0
+    fi
+
+    if ! kill -0 "${pid}" 2>/dev/null; then
+        rm -f "${pid_file}"
+        return 0
+    fi
+
+    log_info "停止 ${name} (PID: ${pid})..."
+    kill "${pid}" 2>/dev/null || true
+
+    # 等待进程退出 (最多 10 秒)
+    local count=0
+    while kill -0 "${pid}" 2>/dev/null && (( count < 10 )); do
+        sleep 1
+        count=$((count + 1))
+    done
+
+    # 强制终止
+    if kill -0 "${pid}" 2>/dev/null; then
+        log_warn "强制终止 ${name}..."
+        kill -9 "${pid}" 2>/dev/null || true
+    fi
+
+    rm -f "${pid_file}"
 }
 
 # 强制停止所有相关进程 (即使 PID 文件丢失)
@@ -427,21 +438,21 @@ status_all() {
 
     # FastAPI
     if is_running "${BACKEND_PID}"; then
-        log_info "FastAPI 后端:  运行中 (PID: $(cat "${BACKEND_PID}"))"
+        log_info "FastAPI 后端:  运行中 (PID: $(cat "${BACKEND_PID}" 2>/dev/null || echo "?"))"
     else
         log_warn "FastAPI 后端:  未运行"
     fi
 
     # Celery Worker
     if is_running "${CELERY_PID}"; then
-        log_info "Celery Worker: 运行中 (PID: $(cat "${CELERY_PID}"))"
+        log_info "Celery Worker: 运行中 (PID: $(cat "${CELERY_PID}" 2>/dev/null || echo "?"))"
     else
         log_warn "Celery Worker: 未运行"
     fi
 
     # Celery Beat
     if is_running "${CELERY_BEAT_PID}"; then
-        log_info "Celery Beat:   运行中 (PID: $(cat "${CELERY_BEAT_PID}"))"
+        log_info "Celery Beat:   运行中 (PID: $(cat "${CELERY_BEAT_PID}" 2>/dev/null || echo "?"))"
     else
         log_warn "Celery Beat:   未运行"
     fi
