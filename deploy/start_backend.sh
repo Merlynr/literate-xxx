@@ -451,6 +451,52 @@ status_all() {
     echo "=========================================="
 }
 
+# ---------- 看门狗 ----------
+
+HEALTH_URL="http://127.0.0.1:${PORT}/api/v1/health"
+HEALTH_TIMEOUT=5
+
+watchdog() {
+    local need_restart=false
+
+    # 检查 FastAPI
+    if is_running "${BACKEND_PID}"; then
+        # PID 存活，检查健康端点
+        if ! curl -sf --max-time "${HEALTH_TIMEOUT}" "${HEALTH_URL}" >/dev/null 2>&1; then
+            log_warn "[watchdog] FastAPI 进程存活但健康检查失败，准备重启"
+            need_restart=true
+        fi
+    else
+        log_warn "[watchdog] FastAPI 未运行，准备启动"
+        need_restart=true
+    fi
+
+    # 检查 Celery Worker
+    if ! is_running "${CELERY_PID}"; then
+        log_warn "[watchdog] Celery Worker 未运行"
+        need_restart=true
+    fi
+
+    if [[ "${need_restart}" == true ]]; then
+        log_info "[watchdog] 执行重启..."
+
+        # 停止
+        stop_service "Celery Worker" "${CELERY_PID}"
+        stop_service "FastAPI 后端" "${BACKEND_PID}"
+        force_stop_all
+
+        sleep 2
+
+        # 启动
+        start_services
+
+        log_info "[watchdog] 重启完成"
+    else
+        # 正静默，不输出日志（避免日志膨胀）
+        :
+    fi
+}
+
 # ---------- 入口 ----------
 
 case "${1:-start}" in
@@ -485,13 +531,17 @@ case "${1:-start}" in
     status)
         status_all
         ;;
+    watchdog)
+        watchdog
+        ;;
     *)
-        echo "用法: $0 {start|stop|restart|status}"
+        echo "用法: $0 {start|stop|restart|status|watchdog}"
         echo ""
-        echo "  start   - 启动所有服务"
-        echo "  stop    - 停止所有服务"
-        echo "  restart - 重启所有服务 (强制清理旧进程)"
-        echo "  status  - 查看服务状态"
+        echo "  start    - 启动所有服务"
+        echo "  stop     - 停止所有服务"
+        echo "  restart  - 重启所有服务 (强制清理旧进程)"
+        echo "  status   - 查看服务状态"
+        echo "  watchdog - 健康检查，不健康时自动重启 (适合 crontab)"
         exit 1
         ;;
 esac
