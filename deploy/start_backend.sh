@@ -11,7 +11,8 @@ set -euo pipefail
 # ---------- 配置区域 ----------
 
 # 项目根目录 (脚本所在目录的上级)
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BACKEND_DIR="${PROJECT_ROOT}/python-bff"
 
 # Python (自动检测，优先使用 python3.11，其次 python3)
@@ -86,14 +87,14 @@ die() {
     exit 1
 }
 
-# 初始化日志文件
+# 初始化日志文件 (追加模式，不清空历史日志)
 init_log() {
     mkdir -p "${LOG_DIR}"
-    # 清空或创建日志文件，写入头部
-    cat > "${STARTUP_LOG}" <<EOF
+    cat >> "${STARTUP_LOG}" <<EOF
+
 ============================================
  XX甄选 - 启动日志
- 开始时间: $(timestamp)
+ 时间: $(timestamp)
 ============================================
 EOF
     log_info "日志文件: ${STARTUP_LOG}"
@@ -226,8 +227,8 @@ is_running() {
     local pid_file="$1"
     if [[ -f "${pid_file}" ]]; then
         local pid
-        pid=$(cat "${pid_file}")
-        if kill -0 "${pid}" 2>/dev/null; then
+        pid=$(cat "${pid_file}" 2>/dev/null || echo "")
+        if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
             return 0
         fi
     fi
@@ -236,7 +237,7 @@ is_running() {
 
 start_backend() {
     if is_running "${BACKEND_PID}"; then
-        log_warn "FastAPI 后端已在运行 (PID: $(cat "${BACKEND_PID}"))"
+        log_warn "FastAPI 后端已在运行 (PID: $(cat "${BACKEND_PID}" 2>/dev/null || echo "?"))"
         return 0
     fi
 
@@ -251,6 +252,7 @@ start_backend() {
         --port "${PORT}" \
         --workers "${WORKERS}" \
         --log-level "${LOG_LEVEL}" \
+        --log-config "${SCRIPT_DIR}/log_config.yaml" \
         --access-log \
         >> "${BACKEND_LOG}" 2>&1 &
 
@@ -262,7 +264,7 @@ start_backend() {
 
 start_celery_worker() {
     if is_running "${CELERY_PID}"; then
-        log_warn "Celery Worker 已在运行 (PID: $(cat "${CELERY_PID}"))"
+        log_warn "Celery Worker 已在运行 (PID: $(cat "${CELERY_PID}" 2>/dev/null || echo "?"))"
         return 0
     fi
 
@@ -284,7 +286,7 @@ start_celery_worker() {
 
 start_celery_beat() {
     if is_running "${CELERY_BEAT_PID}"; then
-        log_warn "Celery Beat 已在运行 (PID: $(cat "${CELERY_BEAT_PID}"))"
+        log_warn "Celery Beat 已在运行 (PID: $(cat "${CELERY_BEAT_PID}" 2>/dev/null || echo "?"))"
         return 0
     fi
 
@@ -307,28 +309,39 @@ stop_service() {
     local name="$1"
     local pid_file="$2"
 
-    if [[ -f "${pid_file}" ]]; then
-        local pid
-        pid=$(cat "${pid_file}")
-        if kill -0 "${pid}" 2>/dev/null; then
-            log_info "停止 ${name} (PID: ${pid})..."
-            kill "${pid}" 2>/dev/null || true
-
-            # 等待进程退出 (最多 10 秒)
-            local count=0
-            while kill -0 "${pid}" 2>/dev/null && (( count < 10 )); do
-                sleep 1
-                ((count++))
-            done
-
-            # 强制终止
-            if kill -0 "${pid}" 2>/dev/null; then
-                log_warn "强制终止 ${name}..."
-                kill -9 "${pid}" 2>/dev/null || true
-            fi
-        fi
-        rm -f "${pid_file}"
+    if [[ ! -f "${pid_file}" ]]; then
+        return 0
     fi
+
+    local pid
+    pid=$(cat "${pid_file}" 2>/dev/null || echo "")
+    if [[ -z "${pid}" ]]; then
+        rm -f "${pid_file}"
+        return 0
+    fi
+
+    if ! kill -0 "${pid}" 2>/dev/null; then
+        rm -f "${pid_file}"
+        return 0
+    fi
+
+    log_info "停止 ${name} (PID: ${pid})..."
+    kill "${pid}" 2>/dev/null || true
+
+    # 等待进程退出 (最多 10 秒)
+    local count=0
+    while kill -0 "${pid}" 2>/dev/null && (( count < 10 )); do
+        sleep 1
+        count=$((count + 1))
+    done
+
+    # 强制终止
+    if kill -0 "${pid}" 2>/dev/null; then
+        log_warn "强制终止 ${name}..."
+        kill -9 "${pid}" 2>/dev/null || true
+    fi
+
+    rm -f "${pid_file}"
 }
 
 # 强制停止所有相关进程 (即使 PID 文件丢失)
@@ -361,6 +374,25 @@ force_stop_all() {
     log_info "进程清理完成"
 }
 
+# 仅启动服务 (不做环境检查，用于 restart/watchdog)
+start_services() {
+    init_dirs
+    init_log
+
+    # 激活虚拟环境 (restart/watchdog 跳过 check_venv，需要手动激活)
+    if [[ -f "${VENV_BIN}/activate" ]]; then
+        source "${VENV_BIN}/activate"
+    else
+        log_error "虚拟环境不存在: ${VENV_BIN}/activate"
+        return 1
+    fi
+
+    start_backend
+    start_celery_worker
+    # start_celery_beat  # 如需定时任务，取消此行注释
+}
+
+# 完整启动 (含环境检查，用于首次 start)
 start_all() {
     init_dirs
     init_log
@@ -376,9 +408,7 @@ start_all() {
     check_env_file
     check_services
 
-    start_backend
-    start_celery_worker
-    # start_celery_beat  # 如需定时任务，取消此行注释
+    start_services
 
     log_step ""
     log_step "=========================================="
@@ -416,21 +446,21 @@ status_all() {
 
     # FastAPI
     if is_running "${BACKEND_PID}"; then
-        log_info "FastAPI 后端:  运行中 (PID: $(cat "${BACKEND_PID}"))"
+        log_info "FastAPI 后端:  运行中 (PID: $(cat "${BACKEND_PID}" 2>/dev/null || echo "?"))"
     else
         log_warn "FastAPI 后端:  未运行"
     fi
 
     # Celery Worker
     if is_running "${CELERY_PID}"; then
-        log_info "Celery Worker: 运行中 (PID: $(cat "${CELERY_PID}"))"
+        log_info "Celery Worker: 运行中 (PID: $(cat "${CELERY_PID}" 2>/dev/null || echo "?"))"
     else
         log_warn "Celery Worker: 未运行"
     fi
 
     # Celery Beat
     if is_running "${CELERY_BEAT_PID}"; then
-        log_info "Celery Beat:   运行中 (PID: $(cat "${CELERY_BEAT_PID}"))"
+        log_info "Celery Beat:   运行中 (PID: $(cat "${CELERY_BEAT_PID}" 2>/dev/null || echo "?"))"
     else
         log_warn "Celery Beat:   未运行"
     fi
@@ -438,6 +468,52 @@ status_all() {
     echo ""
     echo "日志文件: ${STARTUP_LOG}"
     echo "=========================================="
+}
+
+# ---------- 看门狗 ----------
+
+HEALTH_URL="http://127.0.0.1:${PORT}/api/v1/health"
+HEALTH_TIMEOUT=5
+
+watchdog() {
+    local need_restart=false
+
+    # 检查 FastAPI
+    if is_running "${BACKEND_PID}"; then
+        # PID 存活，检查健康端点
+        if ! curl -sf --max-time "${HEALTH_TIMEOUT}" "${HEALTH_URL}" >/dev/null 2>&1; then
+            log_warn "[watchdog] FastAPI 进程存活但健康检查失败，准备重启"
+            need_restart=true
+        fi
+    else
+        log_warn "[watchdog] FastAPI 未运行，准备启动"
+        need_restart=true
+    fi
+
+    # 检查 Celery Worker
+    if ! is_running "${CELERY_PID}"; then
+        log_warn "[watchdog] Celery Worker 未运行"
+        need_restart=true
+    fi
+
+    if [[ "${need_restart}" == true ]]; then
+        log_info "[watchdog] 执行重启..."
+
+        # 停止
+        stop_service "Celery Worker" "${CELERY_PID}"
+        stop_service "FastAPI 后端" "${BACKEND_PID}"
+        force_stop_all
+
+        sleep 2
+
+        # 启动
+        start_services
+
+        log_info "[watchdog] 重启完成"
+    else
+        # 正静默，不输出日志（避免日志膨胀）
+        :
+    fi
 }
 
 # ---------- 入口 ----------
@@ -464,19 +540,27 @@ case "${1:-start}" in
         log_step "等待端口释放..."
         sleep 3
 
-        # 重新启动
-        start_all
+        # 重新启动 (跳过环境检查)
+        start_services
+
+        log_step "=========================================="
+        log_step "  重启完成"
+        log_step "=========================================="
         ;;
     status)
         status_all
         ;;
+    watchdog)
+        watchdog
+        ;;
     *)
-        echo "用法: $0 {start|stop|restart|status}"
+        echo "用法: $0 {start|stop|restart|status|watchdog}"
         echo ""
-        echo "  start   - 启动所有服务"
-        echo "  stop    - 停止所有服务"
-        echo "  restart - 重启所有服务 (强制清理旧进程)"
-        echo "  status  - 查看服务状态"
+        echo "  start    - 启动所有服务"
+        echo "  stop     - 停止所有服务"
+        echo "  restart  - 重启所有服务 (强制清理旧进程)"
+        echo "  status   - 查看服务状态"
+        echo "  watchdog - 健康检查，不健康时自动重启 (适合 crontab)"
         exit 1
         ;;
 esac
