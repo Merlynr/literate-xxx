@@ -166,17 +166,26 @@ export const useGenerationStore = defineStore('generation', () => {
     const track = jobTracks.value[item.job_id]
     const estimated = estimateProgressForItem(item)
     const raw = track ? Math.max(track.progress, estimated) : estimated
-    return capProgressByStatus(item.status, raw)
+    let value = capProgressByStatus(item.status, raw)
+    // 排队过久：仅展示低估算进度（非真实生成进度）
+    if (item.status === 'queued' && isStuckQueued(item)) {
+      value = Math.min(value, 20)
+    }
+    return value
   }
 
-  /** 长时间排队：用不确定进度条，不展示「88% 像快完成」 */
-  function displayProgressIndeterminate(item: GenerationHistoryItem): boolean {
-    return item.status === 'queued' && isStuckQueued(item)
-  }
-
-  /** 排队中不显示百分比数字（88% 仅为估算上限，易误解） */
-  function showProgressPercentage(item: GenerationHistoryItem): boolean {
-    return item.status === 'running' || !isStuckQueued(item)
+  /** 进度条旁文字：排队过久显示等待时长，避免「35% 像快完成」 */
+  function displayProgressFormat(item: GenerationHistoryItem): (percentage: number) => string {
+    return (percentage: number) => {
+      if (item.status === 'queued' && isStuckQueued(item)) {
+        const minutes = Math.max(1, Math.floor(queuedWaitMs(item) / 60_000))
+        return `排队 ${minutes} 分钟`
+      }
+      const n = Math.round(percentage)
+      if (item.status === 'running') return `生成中 ${n}%`
+      if (item.status === 'queued') return `排队中 ${n}%`
+      return `${n}%`
+    }
   }
 
   function queuedWaitMs(item: GenerationHistoryItem): number {
@@ -615,8 +624,7 @@ export const useGenerationStore = defineStore('generation', () => {
     maxSourceAssets: MAX_SOURCE_ASSETS,
     getJobTrack,
     displayProgress,
-    displayProgressIndeterminate,
-    showProgressPercentage,
+    displayProgressFormat,
     displayProgressMessage,
     isStuckQueued,
     isCriticalQueued,

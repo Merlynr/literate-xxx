@@ -3,8 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
+from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,18 +21,25 @@ QUEUED_STALE_SECONDS = 180
 RUNNING_STALE_SECONDS = 300
 MAX_REQUEUE_ATTEMPTS = 3
 RECOVER_BATCH_LIMIT = 100
+# 与 Celery / 业务展示一致；MySQL 读出的 naive 时间按上海本地理解
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def local_now() -> datetime:
+    return datetime.now(LOCAL_TZ)
+
+
+def as_local(value: datetime | None) -> datetime | None:
+    """将 DB 时间转为带时区的本地时间。naive 按 Asia/Shanghai，勿误当 UTC。"""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=LOCAL_TZ)
+    return value.astimezone(LOCAL_TZ)
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def as_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 async def count_requeue_events(db: AsyncSession, job_id: uuid.UUID) -> int:
@@ -144,20 +153,23 @@ async def fail_stale_running_job(
 def is_queued_stale(job: GenerationJob, *, now: datetime | None = None) -> bool:
     if job.status != "queued":
         return False
-    reference = as_utc(job.updated_at or job.created_at)
+    # 用 created_at：避免误判；updated_at 会在重投等操作时刷新
+    reference = as_local(job.created_at)
     if reference is None:
         return False
-    current = now or utcnow()
+    current = as_local(now) if now is not None else local_now()
+    if current is None:
+        return False
     return (current - reference).total_seconds() >= QUEUED_STALE_SECONDS
 
 
 def is_running_stale(job: GenerationJob, *, now: datetime | None = None) -> bool:
     if job.status != "running":
         return False
-    reference = as_utc(job.started_at or job.updated_at or job.created_at)
+    reference = as_local(job.started_at or job.updated_at or job.created_at)
     if reference is None:
         return False
-    current = now or utcnow()
+    current = as_local(now) if now is not None else local_now()
     return (current - reference).total_seconds() >= RUNNING_STALE_SECONDS
 
 
@@ -200,6 +212,16 @@ async def recover_stale_jobs(
             stats["requeued"] += 1
         elif action == "failed":
             stats["failed"] += 1
+        elif job.status in ("queued", "running"):
+            ref = as_local(job.created_at if job.status == "queued" else (job.started_at or job.created_at))
+            if ref is not None:
+                age_s = (local_now() - ref).total_seconds()
+                if age_s >= QUEUED_STALE_SECONDS and job.status == "queued":
+                    logger.warning(
+                        "Stale queued job {} not recovered (age={:.0f}s, requeue_events pending check)",
+                        job.id,
+                        age_s,
+                    )
     if stats["requeued"] or stats["failed"]:
         await db.commit()
     return stats

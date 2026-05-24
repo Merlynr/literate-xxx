@@ -111,8 +111,7 @@ function showProgress(item: { job_id: string; status: string }) {
             <el-progress
               class="mt-3"
               :percentage="gen.displayProgress(item)"
-              :indeterminate="gen.displayProgressIndeterminate(item)"
-              :show-text="gen.showProgressPercentage(item)"
+              :format="gen.displayProgressFormat(item)"
               :stroke-width="8"
             />
             <p
