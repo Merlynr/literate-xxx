@@ -23,6 +23,11 @@ export interface JobTrack {
   statusMessage: string
 }
 
+const JOB_TRACKS_STORAGE_KEY = 'xxzx_job_tracks'
+/** 与后端 job_reconciliation.QUEUED_STALE_SECONDS 一致 */
+const QUEUED_STALE_MS = 3 * 60 * 1000
+const QUEUED_CRITICAL_MS = 10 * 60 * 1000
+
 function wait(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -44,7 +49,18 @@ export const useGenerationStore = defineStore('generation', () => {
   const sourceAssets = ref<GenerationAsset[]>([])
   const activeSourcePreviewIndex = ref(0)
   const historyItems = ref<GenerationHistoryItem[]>([])
-  const jobTracks = ref<Record<string, JobTrack>>({})
+  function loadJobTracksFromSession(): Record<string, JobTrack> {
+    try {
+      const raw = sessionStorage.getItem(JOB_TRACKS_STORAGE_KEY)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as Record<string, JobTrack>
+      return typeof parsed === 'object' && parsed ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const jobTracks = ref<Record<string, JobTrack>>(loadJobTracksFromSession())
   const stage = ref<Stage>('idle')
   const busy = ref(false)
   const errorMessage = ref('')
@@ -76,11 +92,20 @@ export const useGenerationStore = defineStore('generation', () => {
     return jobPollTokens.get(jobId) === token
   }
 
+  function persistJobTracks() {
+    try {
+      sessionStorage.setItem(JOB_TRACKS_STORAGE_KEY, JSON.stringify(jobTracks.value))
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+
   function setJobTrack(jobId: string, progress: number, statusMessage: string) {
     jobTracks.value = {
       ...jobTracks.value,
       [jobId]: { progress, statusMessage },
     }
+    persistJobTracks()
   }
 
   /** 进度只增不减，避免刷新/重连轮询时条突然回退 */
@@ -99,6 +124,60 @@ export const useGenerationStore = defineStore('generation', () => {
     const next = { ...jobTracks.value }
     delete next[jobId]
     jobTracks.value = next
+    persistJobTracks()
+  }
+
+  /** 根据任务停留时间估算进度（刷新/重进页面时避免从 25% 重新开始） */
+  function estimateProgressForItem(item: GenerationHistoryItem): number {
+    const refMs = new Date(item.updated_at || item.created_at).getTime()
+    if (Number.isNaN(refMs)) return 20
+    const minutes = Math.max(0, (Date.now() - refMs) / 60_000)
+    if (item.status === 'running') return Math.min(95, 45 + Math.floor(minutes * 4))
+    if (item.status === 'queued') return Math.min(92, 18 + Math.floor(minutes * 6))
+    return 15
+  }
+
+  function displayProgress(item: GenerationHistoryItem): number {
+    const track = jobTracks.value[item.job_id]
+    const estimated = estimateProgressForItem(item)
+    if (track) return Math.max(track.progress, estimated)
+    return estimated
+  }
+
+  function queuedWaitMs(item: GenerationHistoryItem): number {
+    const refMs = new Date(item.updated_at || item.created_at).getTime()
+    if (Number.isNaN(refMs)) return 0
+    return Math.max(0, Date.now() - refMs)
+  }
+
+  function isStuckQueued(item: GenerationHistoryItem): boolean {
+    return item.status === 'queued' && queuedWaitMs(item) >= QUEUED_STALE_MS
+  }
+
+  function isCriticalQueued(item: GenerationHistoryItem): boolean {
+    return item.status === 'queued' && queuedWaitMs(item) >= QUEUED_CRITICAL_MS
+  }
+
+  function stuckQueuedHint(item: GenerationHistoryItem): string {
+    if (item.status !== 'queued') return ''
+    const minutes = Math.max(1, Math.floor(queuedWaitMs(item) / 60_000))
+    if (isCriticalQueued(item)) {
+      return `已排队约 ${minutes} 分钟仍未开始生成。请确认 Celery Worker 与 Redis 正常，或点击刷新；仍无进展请联系管理员。`
+    }
+    if (isStuckQueued(item)) {
+      return `已排队约 ${minutes} 分钟，系统会自动重试投递，请稍候或点击刷新。`
+    }
+    return ''
+  }
+
+  function displayProgressMessage(item: GenerationHistoryItem): string {
+    const stuck = stuckQueuedHint(item)
+    if (stuck) return stuck
+    const track = jobTracks.value[item.job_id]
+    if (track?.statusMessage) return track.statusMessage
+    if (item.status === 'running') return 'AI 正在生成中…'
+    if (item.status === 'queued') return '任务排队中…'
+    return '处理中…'
   }
 
   function jobToHistoryRow(
@@ -151,11 +230,23 @@ export const useGenerationStore = defineStore('generation', () => {
     resetGenerateForm()
   }
 
-  function syncActiveJobPolling() {
+  /** 仅对「没有进度记录且未在轮询」的任务启动轮询 */
+  function ensureJobPollingForNewActiveJobs() {
     for (const item of historyItems.value) {
-      if (isActiveJobStatus(item.status) && !jobPollInFlight.has(item.job_id)) {
-        startJobPolling(item.job_id)
-      }
+      if (!isActiveJobStatus(item.status)) continue
+      if (jobPollInFlight.has(item.job_id)) continue
+      if (jobTracks.value[item.job_id]) continue
+      startJobPolling(item.job_id)
+    }
+  }
+
+  /** 有进度但轮询已停（如长时间排队）时恢复轮询，不重置进度 */
+  function resumeJobPollingIfNeeded() {
+    for (const item of historyItems.value) {
+      if (!isActiveJobStatus(item.status)) continue
+      if (jobPollInFlight.has(item.job_id)) continue
+      if (!jobTracks.value[item.job_id]) continue
+      startJobPolling(item.job_id, { resume: true })
     }
   }
 
@@ -193,8 +284,12 @@ export const useGenerationStore = defineStore('generation', () => {
     historyItems.value = await listHistory(0, 50, undefined, options)
     if (options?.keepPolling) {
       await resyncActiveJobsFromApi()
+      resumeJobPollingIfNeeded()
+      ensureJobPollingForNewActiveJobs()
+      return
     }
-    syncActiveJobPolling()
+    ensureJobPollingForNewActiveJobs()
+    resumeJobPollingIfNeeded()
   }
 
   async function refreshEstimate() {
@@ -261,34 +356,56 @@ export const useGenerationStore = defineStore('generation', () => {
     userStore.privacyAcceptedAt = res.privacy_accepted_at
   }
 
-  function startJobPolling(jobId: string) {
+  function startJobPolling(jobId: string, options?: { resume?: boolean }) {
     if (jobPollInFlight.has(jobId)) return
 
     const token = (jobPollTokens.get(jobId) ?? 0) + 1
     jobPollTokens.set(jobId, token)
     if (!jobTracks.value[jobId]) {
       setJobTrack(jobId, 12, '任务已提交，等待处理…')
+    } else if (options?.resume) {
+      const track = jobTracks.value[jobId]
+      bumpJobTrack(jobId, track.progress, track.statusMessage)
     }
     jobPollInFlight.add(jobId)
-    void runJobPoll(jobId, token)
+    void runJobPoll(jobId, token, options)
   }
 
-  async function runJobPoll(jobId: string, token: number) {
+  async function runJobPoll(
+    jobId: string,
+    token: number,
+    options?: { resume?: boolean },
+  ) {
+    const resume = !!options?.resume
+
     try {
       let latest = await getJob(jobId, { skipCache: true })
       if (!isJobPollActive(jobId, token)) return latest
 
       mergeJobIntoHistory(latest)
-      bumpJobTrack(jobId, 20, statusMessageForJob(latest.status))
+      if (resume) {
+        bumpJobTrack(
+          jobId,
+          jobTracks.value[jobId]?.progress ?? 15,
+          statusMessageForJob(latest.status),
+        )
+      } else {
+        bumpJobTrack(jobId, 20, statusMessageForJob(latest.status))
+      }
 
       let attempts = 0
       while (attempts < 40 && isActiveJobStatus(latest.status)) {
         if (!isJobPollActive(jobId, token)) return latest
-        bumpJobTrack(
-          jobId,
-          Math.min(95, 25 + attempts * 2),
-          statusMessageForJob(latest.status),
-        )
+        if (!resume) {
+          bumpJobTrack(
+            jobId,
+            Math.min(95, 25 + attempts * 2),
+            statusMessageForJob(latest.status),
+          )
+        } else {
+          const cur = jobTracks.value[jobId]?.progress ?? 15
+          bumpJobTrack(jobId, Math.min(99, cur + 1), statusMessageForJob(latest.status))
+        }
         await wait(2000)
         if (!isJobPollActive(jobId, token)) return latest
         latest = await getJob(jobId, { skipCache: true })
@@ -298,17 +415,20 @@ export const useGenerationStore = defineStore('generation', () => {
 
       if (isActiveJobStatus(latest.status)) {
         if (!isJobPollActive(jobId, token)) return latest
-        bumpJobTrack(jobId, 80, '任务仍在处理中，系统会自动重试排队…')
+        bumpJobTrack(jobId, Math.max(jobTracks.value[jobId]?.progress ?? 80, 80), '任务仍在处理中，系统会自动重试排队…')
         let extraAttempts = 0
         while (extraAttempts < 30 && isActiveJobStatus(latest.status)) {
           if (!isJobPollActive(jobId, token)) return latest
-          bumpJobTrack(
-            jobId,
-            Math.min(98, 82 + extraAttempts),
+          const statusMsg =
             latest.status === 'running'
               ? 'AI 正在生成中，请稍候…'
-              : '仍在排队，系统会自动重试…',
-          )
+              : '仍在排队，系统会自动重试…'
+          if (resume) {
+            const cur = jobTracks.value[jobId]?.progress ?? 82
+            bumpJobTrack(jobId, Math.min(99, Math.max(cur, 82 + extraAttempts)), statusMsg)
+          } else {
+            bumpJobTrack(jobId, Math.min(98, 82 + extraAttempts), statusMsg)
+          }
           await wait(3000)
           if (!isJobPollActive(jobId, token)) return latest
           latest = await getJob(jobId, { skipCache: true })
@@ -324,15 +444,15 @@ export const useGenerationStore = defineStore('generation', () => {
       if (latest.status === 'succeeded') {
         setJobTrack(jobId, 100, '生成完成')
         invalidateAfterNewGeneration()
-        await loadHistory({ force: true })
+        await loadHistory({ force: true, keepPolling: true })
         window.setTimeout(() => clearJobTrack(jobId), 4000)
       } else if (latest.status === 'failed') {
         setJobTrack(jobId, 100, latest.error_message || '生成失败')
-        await loadHistory({ force: true })
+        await loadHistory({ force: true, keepPolling: true })
         window.setTimeout(() => clearJobTrack(jobId), 8000)
       } else {
-        bumpJobTrack(jobId, 98, '任务仍在处理中，可刷新列表查看')
-        await loadHistory({ force: true })
+        bumpJobTrack(jobId, Math.max(jobTracks.value[jobId]?.progress ?? 98, 98), '任务仍在处理中，可刷新列表查看')
+        await loadHistory({ force: true, keepPolling: true })
       }
 
       return latest
@@ -401,6 +521,11 @@ export const useGenerationStore = defineStore('generation', () => {
     canGenerate,
     maxSourceAssets: MAX_SOURCE_ASSETS,
     getJobTrack,
+    displayProgress,
+    displayProgressMessage,
+    isStuckQueued,
+    isCriticalQueued,
+    stuckQueuedHint,
     isActiveJobStatus,
     resetGenerateForm,
     prepareGeneratePage,

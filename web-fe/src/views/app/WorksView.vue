@@ -33,24 +33,12 @@ async function refresh() {
 onMounted(refresh)
 onActivated(() => {
   if (isTasksTab.value) {
-    void gen.loadHistory()
+    void gen.loadHistory({ keepPolling: true })
   }
 })
 
-function trackFor(jobId: string) {
-  return gen.getJobTrack(jobId)
-}
-
 function showProgress(item: { job_id: string; status: string }) {
   return isTasksTab.value && gen.isActiveJobStatus(item.status)
-}
-
-function progressPercent(jobId: string) {
-  return trackFor(jobId)?.progress ?? 15
-}
-
-function progressMessage(jobId: string) {
-  return trackFor(jobId)?.statusMessage ?? '处理中…'
 }
 </script>
 
@@ -115,11 +103,14 @@ function progressMessage(jobId: string) {
           <template v-if="showProgress(item)">
             <el-progress
               class="mt-3"
-              :percentage="progressPercent(item.job_id)"
+              :percentage="gen.displayProgress(item)"
               :stroke-width="8"
             />
-            <p class="mt-2 text-xs text-brand-900/60">
-              {{ progressMessage(item.job_id) }}
+            <p
+              class="mt-2 text-xs leading-relaxed"
+              :class="gen.isCriticalQueued(item) ? 'text-amber-800' : 'text-brand-900/60'"
+            >
+              {{ gen.displayProgressMessage(item) }}
             </p>
           </template>
           <p class="mt-2 truncate text-xs text-brand-900/50">{{ item.job_id }}</p>
