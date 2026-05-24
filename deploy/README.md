@@ -190,6 +190,24 @@ sudo systemctl restart xxzx-backend xxzx-celery xxzx-celery-beat
 
 若 `readiness` 里 `redis` 不是 `ok`，Worker 即使 `active (running)` 也无法消费队列，前端会长期显示「排队中」。
 
+### Q: `xxzx-celery` 状态 `203/EXEC` / `activating (auto-restart)`
+
+systemd **无法执行** `run_celery.sh`，常见原因：
+
+1. 脚本在 Windows 上编辑过，带 **CRLF**（`\r\n`），Linux 内核执行 shebang 失败  
+2. 脚本没有 **可执行权限**（`chmod +x`）
+
+在服务器上修复：
+
+```bash
+cd /root/literate-xxx
+sed -i 's/\r$//' deploy/*.sh deploy/lib/*.sh
+chmod +x deploy/run_celery.sh deploy/run_celery_beat.sh deploy/run_backend.sh
+sudo bash deploy/install_systemd.sh   # 会写入 ExecStart=/bin/bash ... 并去 CRLF
+sudo systemctl restart xxzx-celery xxzx-celery-beat
+systemctl status xxzx-celery --no-pager
+```
+
 ### Q: Beat 在跑但任务一直「排队中」/ 进度条 88%
 
 Beat 只负责**定时发 reconcile 消息**，真正执行任务的是 **Worker**（`xxzx-celery`），不是 Beat。
@@ -207,8 +225,11 @@ python -m celery -A app.workers.celery_app inspect registered
 # 3. 手动 ping 测试
 python -m celery -A app.workers.celery_app inspect ping
 
-# 4. 看 broker 队列积压（默认队列名 celery）
-redis-cli -a '密码' LLEN celery
+# 4. 看 broker 队列积压（**broker 在 Redis DB 1**，不是 DB 0）
+redis-cli -a '密码' -n 1 LLEN celery
+
+# 一键诊断（推荐）
+sudo bash deploy/check_celery.sh
 
 # 5. 更新代码后务必重启 Worker + Beat
 sudo systemctl restart xxzx-celery xxzx-celery-beat

@@ -33,11 +33,18 @@ render_unit "${DEPLOY_DIR}/xxzx-backend.service" /etc/systemd/system/xxzx-backen
 render_unit "${DEPLOY_DIR}/xxzx-celery.service" /etc/systemd/system/xxzx-celery.service
 render_unit "${DEPLOY_DIR}/xxzx-celery-beat.service" /etc/systemd/system/xxzx-celery-beat.service
 
-chmod +x \
+for script in \
   "${DEPLOY_DIR}/run_backend.sh" \
   "${DEPLOY_DIR}/run_celery.sh" \
   "${DEPLOY_DIR}/run_celery_beat.sh" \
-  "${DEPLOY_DIR}/lib/env.sh"
+  "${DEPLOY_DIR}/check_celery.sh" \
+  "${DEPLOY_DIR}/install_systemd.sh" \
+  "${DEPLOY_DIR}/lib/env.sh"; do
+  if [[ -f "${script}" ]]; then
+    sed -i 's/\r$//' "${script}"
+    chmod +x "${script}"
+  fi
+done
 strip_env_bom "${BACKEND_DIR}/.env"
 
 systemctl daemon-reload
