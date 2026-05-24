@@ -23,6 +23,13 @@ def _format_mapping(value: Any) -> str:
 
 
 def _analysis_summary(analysis: Any) -> str:
+    if isinstance(analysis, Mapping) and ("product_subject" in analysis or "style_reference" in analysis):
+        product = snapshot_mapping(analysis.get("product_subject")) or {}
+        style = snapshot_mapping(analysis.get("style_reference")) or {}
+        parts = [f"商品主体（必须保留）：{_format_mapping(product)}"]
+        if style:
+            parts.append(f"风格参考（仅背景/光影/构图）：{_format_mapping(style)}")
+        return "\n".join(parts)
     if isinstance(analysis, VisionAnalysisResult):
         summary = analysis.analysis.get("summary") or analysis.analysis.get("analysis") or analysis.analysis.get("text")
         if isinstance(summary, str) and summary.strip():
@@ -38,6 +45,16 @@ def _analysis_summary(analysis: Any) -> str:
     return str(analysis)
 
 
+def build_image_role_preamble(*, has_style_template: bool) -> str:
+    if not has_style_template:
+        return "【输入图片】仅一张用户上传的商品实拍，必须作为画面唯一主体并保留包装细节。"
+    return (
+        "【输入图片说明】\n"
+        "第1张：用户上传的商品实拍——画面唯一商品主体，必须保留其包装外形、标签文字、主色与材质。\n"
+        "第2张：运营配置的风格模板（Demo）——学习背景、光影、构图、装饰元素与排版气质，禁止复制模板中的商品外观。"
+    )
+
+
 def _build_from_snapshot(
     *,
     prompt_snapshot: Mapping[str, Any],
@@ -50,8 +67,15 @@ def _build_from_snapshot(
     prompt_hint = str(prompt_snapshot.get("prompt_hint") or "").strip()
     analysis_summary = _analysis_summary(vision_analysis)
     category_name = (category or {}).get("name") or "商品"
+    category_code = (category or {}).get("category_code") or ""
     style_name = (style or {}).get("name") or "默认风格"
+    style_cover = (style or {}).get("cover_image_url") or ""
     rule_text = str(freeze_json(rule_snapshot))
+    style_ref_analysis = ""
+    product_analysis = ""
+    if isinstance(vision_analysis, Mapping):
+        style_ref_analysis = _format_mapping(vision_analysis.get("style_reference") or {})
+        product_analysis = _format_mapping(vision_analysis.get("product_subject") or {})
 
     system_prompt = (
         "你是电商商品海报生成助手。"
@@ -69,19 +93,22 @@ def _build_from_snapshot(
     )
     generation_prompt = "\n".join(
         [
-            f"请生成一张{category_name}商品海报，参考风格为{style_name}。",
-            f"保持产品主体真实可识别，保留商品标签和关键卖点。",
-            f"视觉分析摘要：{analysis_summary}",
-            f"冻结快照：{freeze_json(prompt_snapshot)}",
+            f"请生成一张「{category_name}」类目的商品宣传海报（类目编码：{category_code or '未指定'}）。",
+            f"运营配置的风格为「{style_name}」，需学习该风格模板的背景、光影、构图与版式气质。",
+            "【硬性要求】以用户上传的实物照片为唯一商品主体：必须保留实拍图中的包装外形、标签文字、主色与材质，不得替换成模板图中的其他商品。",
+            "【风格学习】若有第二张风格模板图，只借鉴其背景/光影/构图/装饰与排版，不要把模板里的商品抄进成图。",
+            f"商品主体分析：{product_analysis or analysis_summary}",
+            f"风格模板分析：{style_ref_analysis or '（无风格封面，仅按类目与风格名称生成）'}",
             f"规则冻结：{rule_text}",
             "输出画面应干净、高质感、商业化，适合直接用于详情页或推广页。",
-            f"额外要求：{prompt_hint or '无'}",
+            f"画面要求：{prompt_hint or '无'}",
         ]
     )
     reference_urls = tuple(
-        url for url in (
+        url
+        for url in (
             (prompt_snapshot.get("source_image_url") or source_asset.get("download_url")),
-            (prompt_snapshot.get("style_image_url")),
+            (prompt_snapshot.get("style_image_url") or style_cover),
         )
         if isinstance(url, str) and url
     )

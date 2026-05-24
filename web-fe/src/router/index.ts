@@ -39,6 +39,16 @@ const router = createRouter({
           props: { tab: 'tasks' },
         },
         {
+          path: 'works/completed',
+          name: 'app-completed',
+          component: () => import('@/views/app/CompletedTasksView.vue'),
+        },
+        {
+          path: 'works/:jobId',
+          name: 'app-work-detail',
+          component: () => import('@/views/app/CompletedTaskDetailView.vue'),
+        },
+        {
           path: 'modules',
           name: 'app-modules',
           component: () => import('@/views/app/ModulesView.vue'),

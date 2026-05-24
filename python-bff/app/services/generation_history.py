@@ -14,14 +14,18 @@ async def list_generation_jobs(
     tenant_id: uuid.UUID,
     offset: int = 0,
     limit: int = 20,
+    status: str | None = None,
 ) -> list[GenerationJob]:
-    result = await db.execute(
+    stmt = (
         select(GenerationJob)
         .where(GenerationJob.tenant_id == tenant_id)
         .order_by(GenerationJob.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
+    if status:
+        stmt = stmt.where(GenerationJob.status == status)
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

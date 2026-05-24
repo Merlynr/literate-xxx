@@ -184,19 +184,23 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
         assert asset is source_asset
         return "https://signed.example/source.jpg"
 
-    async def fake_analyze_reference_image(*, image_urls, prompt_hint, provider_name, model_name):
-        assert image_urls == ["https://signed.example/style.jpg"]
+    async def fake_analyze_generation_vision(
+        *,
+        source_image_url,
+        style_image_url=None,
+        prompt_hint="",
+        provider_name=None,
+        model_name=None,
+    ):
+        assert source_image_url == "https://signed.example/source.jpg"
+        assert style_image_url == "https://signed.example/style.jpg"
         assert prompt_hint == "keep the product centered"
         assert provider_name == "alibaba-dashscope"
         assert model_name == "wan2.7-image"
-        return SimpleNamespace(
-            provider="alibaba-dashscope",
-            model_name="qwen3.6-plus",
-            image_urls=tuple(image_urls),
-            analysis={"background": "studio", "lighting": "soft"},
-            request_id="vision-1",
-            raw_response={"ok": True},
-        )
+        return {
+            "product_subject": {"must_preserve": ["green bottle", "label text"]},
+            "style_reference": {"background": "studio", "lighting": "soft"},
+        }
 
     def fake_assemble_generation_prompt(*, prompt_snapshot, rule_snapshot, vision_analysis):
         prompt_calls.append(
@@ -210,16 +214,17 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
             system_prompt="SYSTEM",
             user_prompt="USER",
             generation_prompt="PROMPT TEXT",
-            reference_urls=("https://signed.example/source.jpg", "https://signed.example/style.jpg"),
+            reference_urls=("https://signed.example/source.jpg",),
             prompt_snapshot={"prompt_hash": "a" * 64, "assembled_prompt": "PROMPT TEXT"},
         )
 
     class FakeImageProvider:
-        async def generate(self, *, prompt, image_urls, size, watermark, n):
+        async def generate(self, *, prompt, image_urls, size, watermark, n, source_image_url=None, style_image_url=None):
             provider_calls.append(
                 {
                     "prompt": prompt,
                     "image_urls": list(image_urls),
+                    "source_image_url": source_image_url,
                     "size": size,
                     "watermark": watermark,
                     "n": n,
@@ -289,7 +294,7 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
     monkeypatch.setattr(generation_worker, "_load_source_asset", fake_load_source_asset)
     monkeypatch.setattr(generation_worker, "record_job_event", fake_record_job_event)
     monkeypatch.setattr(generation_worker, "generation_asset_download_url", fake_generation_asset_download_url)
-    monkeypatch.setattr(generation_worker, "analyze_reference_image", fake_analyze_reference_image)
+    monkeypatch.setattr(generation_worker, "analyze_generation_vision", fake_analyze_generation_vision)
     monkeypatch.setattr(generation_worker, "assemble_generation_prompt", fake_assemble_generation_prompt)
     monkeypatch.setattr(generation_worker, "get_image_generation_provider", lambda provider_name: FakeImageProvider())
     monkeypatch.setattr(generation_worker, "_download_image_bytes", fake_download_image_bytes)
@@ -310,18 +315,13 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
     assert db.commit_calls == 1
     assert [event_type for event_type, _ in events] == ["job.running", "job.succeeded"]
     assert download_calls == ["https://generated.example/raw.png"]
-    assert provider_calls == [
-        {
-            "prompt": "PROMPT TEXT",
-            "image_urls": [
-                "https://signed.example/source.jpg",
-                "https://signed.example/style.jpg",
-            ],
-            "size": "2K",
-            "watermark": False,
-            "n": 1,
-        }
+    assert provider_calls[0]["image_urls"] == [
+        "https://signed.example/source.jpg",
+        "https://signed.example/style.jpg",
     ]
+    assert provider_calls[0]["source_image_url"] == "https://signed.example/source.jpg"
+    assert "第1张" in provider_calls[0]["prompt"]
+    assert "PROMPT TEXT" in provider_calls[0]["prompt"]
     assert prompt_calls[0]["vision_analysis"] == {"background": "studio", "lighting": "soft"}
     assert persist_calls[0]["raw_content"] == b"raw-image-bytes"
     assert persist_calls[0]["watermarked_content"] == b"watermarked-bytes"

@@ -13,10 +13,11 @@ from app.models.generation_asset import GenerationAsset
 from app.models.generation_job import GenerationJob
 from app.providers import get_image_generation_provider
 from app.services.generation_jobs import generation_asset_download_url, record_job_event
+from app.services.oss import generate_presigned_download_url
 from app.services.generation_results import persist_generation_result_assets
 from app.services.generation_snapshot import freeze_generation_job_context
-from app.services.prompt_assembler import assemble_generation_prompt
-from app.services.vision_analysis import analyze_reference_image
+from app.services.prompt_assembler import assemble_generation_prompt, build_image_role_preamble
+from app.services.vision_analysis import analyze_generation_vision
 from app.services.watermark import apply_watermark
 
 
@@ -25,6 +26,15 @@ async def _load_job(db, job_id: uuid.UUID) -> GenerationJob:
     if not job:
         raise RuntimeError("Generation job not found")
     return job
+
+
+def _resolve_style_cover_url(style_snapshot: dict) -> str:
+    url = str(style_snapshot.get("cover_image_url") or "").strip()
+    if not url:
+        return ""
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return generate_presigned_download_url(url)
 
 
 async def _load_source_asset(db, job: GenerationJob) -> GenerationAsset:
@@ -74,28 +84,43 @@ async def _run_generation_job(db, job_id: uuid.UUID) -> dict[str, Any]:
         prompt_snapshot = context.job.get("prompt_snapshot", {})
         rule_snapshot = context.job.get("rule_snapshot", {})
         style_snapshot = prompt_snapshot.get("style") or {}
+        category_snapshot = prompt_snapshot.get("category") or {}
         source_download_url = generation_asset_download_url(source_asset)
-        style_download_url = style_snapshot.get("cover_image_url") or ""
-        reference_urls = [source_download_url]
-        if style_download_url:
-            reference_urls.append(style_download_url)
+        style_download_url = _resolve_style_cover_url(style_snapshot)
+        prompt_hint = str(prompt_snapshot.get("prompt_hint") or "")
+        vision_hint_parts = []
+        if category_snapshot.get("name"):
+            vision_hint_parts.append(f"类目：{category_snapshot['name']}")
+        if style_snapshot.get("name"):
+            vision_hint_parts.append(f"风格：{style_snapshot['name']}")
+        if prompt_hint:
+            vision_hint_parts.append(prompt_hint)
+        vision_hint = "；".join(vision_hint_parts)
 
-        vision_result = await analyze_reference_image(
-            image_urls=[style_download_url] if style_download_url else [source_download_url],
-            prompt_hint=str(prompt_snapshot.get("prompt_hint") or ""),
+        # Vision：分别分析实拍主体 + 风格模板；出图：实拍第1张（主体）+ 模板第2张（学版式）
+        vision_analysis = await analyze_generation_vision(
+            source_image_url=source_download_url,
+            style_image_url=style_download_url or None,
+            prompt_hint=vision_hint,
             provider_name=context.job.get("provider"),
             model_name=context.job.get("model_name"),
         )
         prompt_bundle = assemble_generation_prompt(
             prompt_snapshot=prompt_snapshot,
             rule_snapshot=rule_snapshot,
-            vision_analysis=vision_result.analysis,
+            vision_analysis=vision_analysis,
         )
-        prompt_text = prompt_bundle.generation_prompt
+        generation_image_urls = [source_download_url]
+        if style_download_url:
+            generation_image_urls.append(style_download_url)
+        image_preamble = build_image_role_preamble(has_style_template=bool(style_download_url))
+        prompt_text = f"{image_preamble}\n\n{prompt_bundle.generation_prompt}"
         image_provider = get_image_generation_provider(context.job.get("provider"))
         generated = await image_provider.generate(
             prompt=prompt_text,
-            image_urls=reference_urls,
+            image_urls=generation_image_urls,
+            source_image_url=source_download_url,
+            style_image_url=style_download_url or None,
             size=str(rule_snapshot.get("image_size") or "2K"),
             watermark=False,
             n=1,

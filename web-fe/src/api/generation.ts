@@ -42,10 +42,15 @@ export function getJob(jobId: string) {
   return request<GenerationJob>({ url: `/generation-jobs/${jobId}` })
 }
 
-export function listHistory(offset = 0, limit = 50) {
+export function listHistory(offset = 0, limit = 50, status?: string) {
+  const statusQuery = status ? `&status=${encodeURIComponent(status)}` : ''
   return request<GenerationHistoryItem[]>({
-    url: `/generation-history?offset=${offset}&limit=${limit}`,
+    url: `/generation-history?offset=${offset}&limit=${limit}${statusQuery}`,
   })
+}
+
+export function listCompletedHistory(offset = 0, limit = 50) {
+  return listHistory(offset, limit, 'succeeded')
 }
 
 export function buildRequestId() {

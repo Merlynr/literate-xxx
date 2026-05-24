@@ -20,6 +20,7 @@ const nav = [
   { path: '/app/dashboard', label: '工作台', icon: HomeFilled },
   { path: '/app/generate', label: '发起生成', icon: Plus },
   { path: '/app/works/tasks', label: '生成任务', icon: Grid },
+  { path: '/app/works/completed', label: '已完成任务', icon: Grid },
   { path: '/app/works', label: '成品图库', icon: Grid },
   { path: '/app/modules', label: '可定制模块', icon: Star },
   { path: '/app/account', label: '客户配置', icon: Setting },

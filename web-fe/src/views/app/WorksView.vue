@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 import { useGenerationStore } from '@/stores/generation'
 
 const props = defineProps<{ tab?: string }>()
 const route = useRoute()
+const router = useRouter()
 const gen = useGenerationStore()
 const statusFilter = ref('')
 const loading = ref(false)
@@ -42,6 +43,9 @@ const filtered = computed(() => {
         <el-option label="失败" value="failed" />
       </el-select>
       <el-button :loading="loading" @click="gen.loadHistory()">刷新</el-button>
+      <router-link to="/app/works/completed">
+        <el-button>已完成任务</el-button>
+      </router-link>
       <router-link to="/app/generate">
         <el-button type="primary">创建更多成品</el-button>
       </router-link>
@@ -69,6 +73,15 @@ const filtered = computed(() => {
           <p class="mt-2 truncate text-xs text-brand-900/50">{{ item.job_id }}</p>
           <p class="text-xs text-brand-900/40">{{ new Date(item.created_at).toLocaleString() }}</p>
           <p v-if="item.error_message" class="mt-1 text-xs text-red-700">{{ item.error_message }}</p>
+          <el-button
+            v-if="item.status === 'succeeded'"
+            link
+            type="primary"
+            class="mt-2"
+            @click="router.push({ name: 'app-work-detail', params: { jobId: item.job_id } })"
+          >
+            查看详情
+          </el-button>
         </div>
       </div>
     </div>
