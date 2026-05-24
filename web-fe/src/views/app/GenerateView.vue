@@ -1,27 +1,53 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onActivated, onMounted, ref } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 import { useUserStore } from '@/stores/user'
 
 const gen = useGenerationStore()
 const userStore = useUserStore()
 const fileInput = ref<HTMLInputElement | null>(null)
-const previewTab = ref<'watermark' | 'raw' | 'source'>('watermark')
+const previewTab = ref<'watermark' | 'raw' | 'source'>('source')
 const privacyChecked = ref(false)
 
-onMounted(async () => {
+function initGeneratePage() {
+  gen.prepareGeneratePage()
+  previewTab.value = 'source'
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
+
+async function bootstrapGeneratePage() {
+  initGeneratePage()
   await gen.loadCatalogs()
   privacyChecked.value = userStore.hasPrivacyAgreement
-})
+}
+
+onMounted(bootstrapGeneratePage)
+onActivated(initGeneratePage)
+
+function resetAndStartOver() {
+  gen.resetForNewTask()
+  previewTab.value = 'source'
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
 
 function pickFile() {
   fileInput.value?.click()
 }
 
 async function onFileChange(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  await gen.uploadFile(file)
+  const input = e.target as HTMLInputElement
+  const files = input.files ? Array.from(input.files) : []
+  if (!files.length) return
+  await gen.uploadFiles(files)
+  input.value = ''
+}
+
+function selectSourcePreview(index: number) {
+  gen.activeSourcePreviewIndex = index
 }
 
 async function acceptPrivacy() {
@@ -98,15 +124,45 @@ const previewUrl = () => {
         </div>
 
         <div>
-          <label class="mb-1 block text-sm font-medium">上传实拍图</label>
+          <label class="mb-1 block text-sm font-medium">
+            上传实拍图
+            <span class="text-xs text-brand-900/50">
+              （{{ gen.sourceAssets.length }}/{{ gen.maxSourceAssets }}）
+            </span>
+          </label>
           <div
             class="cursor-pointer rounded-xl border-2 border-dashed border-brand-700/25 bg-cream-50 p-6 text-center text-sm text-brand-900/60 hover:border-gold-600"
             @click="pickFile"
           >
-            点击或拖拽上传<br />
-            <span class="text-xs">建议正面、侧面、细节图</span>
+            点击选择图片，可一次选多张<br />
+            <span class="text-xs">建议上传正面、侧面、细节图</span>
           </div>
-          <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange" />
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/*"
+            multiple
+            class="hidden"
+            @change="onFileChange"
+          />
+          <div v-if="gen.sourceAssets.length" class="mt-3 grid grid-cols-3 gap-2">
+            <div
+              v-for="(asset, index) in gen.sourceAssets"
+              :key="asset.asset_id"
+              class="relative overflow-hidden rounded-lg border"
+              :class="gen.activeSourcePreviewIndex === index ? 'border-gold-600 ring-2 ring-gold-200' : 'border-brand-700/10'"
+              @click="selectSourcePreview(index)"
+            >
+              <img :src="asset.download_url" class="aspect-square w-full object-cover" alt="source" />
+              <button
+                type="button"
+                class="absolute right-1 top-1 rounded bg-black/55 px-1.5 py-0.5 text-xs text-white"
+                @click.stop="gen.removeSourceAsset(index)"
+              >
+                删除
+              </button>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -139,6 +195,13 @@ const previewUrl = () => {
         <p class="text-center text-xs text-brand-900/50">{{ gen.statusMessage }}</p>
         <el-progress v-if="gen.stage === 'generating'" :percentage="gen.progress" />
         <el-alert v-if="gen.errorMessage" :title="gen.errorMessage" type="error" show-icon />
+        <el-button
+          v-if="gen.isGenerationFinished"
+          class="w-full"
+          @click="resetAndStartOver"
+        >
+          开始新任务
+        </el-button>
       </div>
 
       <div class="page-card min-h-[480px] flex-1 p-4">
@@ -163,7 +226,7 @@ const previewUrl = () => {
           />
           <p v-else class="text-sm text-brand-900/40">上传图片后在此预览</p>
         </div>
-        <div v-if="gen.hasResult" class="mt-4 flex gap-2">
+        <div v-if="gen.hasResult" class="mt-4 flex flex-wrap gap-2">
           <a
             v-if="gen.currentJob?.watermarked_result_download_url"
             :href="gen.currentJob.watermarked_result_download_url"
@@ -180,6 +243,13 @@ const previewUrl = () => {
           >
             下载原图
           </a>
+          <router-link
+            v-if="gen.currentJob?.job_id"
+            :to="{ name: 'app-work-detail', params: { jobId: gen.currentJob.job_id } }"
+            class="rounded-xl border border-brand-700/20 px-4 py-2 text-sm text-brand-700"
+          >
+            查看任务详情
+          </router-link>
         </div>
       </div>
     </div>

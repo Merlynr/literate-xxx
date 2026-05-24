@@ -103,6 +103,7 @@ export interface GenerationJob {
   raw_result_download_url?: string | null
   watermarked_result_download_url?: string | null
   source_preview_url?: string | null
+  source_preview_urls?: string[] | null
   prompt_snapshot?: {
     category?: { name?: string; category_code?: string } | null
     style?: { name?: string } | null

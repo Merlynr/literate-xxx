@@ -7,6 +7,7 @@ import {
   listCategories,
   listHistory,
   listStyles,
+  MAX_SOURCE_ASSETS,
   uploadSourceAsset,
 } from '@/api/generation'
 import { acceptPrivacy } from '@/api/privacy'
@@ -30,8 +31,8 @@ export const useGenerationStore = defineStore('generation', () => {
   const outputType = ref('scene')
   const promptHint = ref('')
 
-  const sourceAsset = ref<GenerationAsset | null>(null)
-  const sourcePreviewUrl = ref('')
+  const sourceAssets = ref<GenerationAsset[]>([])
+  const activeSourcePreviewIndex = ref(0)
   const currentJob = ref<GenerationJob | null>(null)
   const historyItems = ref<GenerationHistoryItem[]>([])
   const stage = ref<Stage>('idle')
@@ -41,9 +42,14 @@ export const useGenerationStore = defineStore('generation', () => {
   const progress = ref(0)
   const estimatedUnits = ref<number | null>(null)
 
+  const sourcePreviewUrls = computed(() => sourceAssets.value.map((asset) => asset.download_url))
+  const sourcePreviewUrl = computed(
+    () => sourcePreviewUrls.value[activeSourcePreviewIndex.value] || sourcePreviewUrls.value[0] || '',
+  )
+
   const canGenerate = computed(
     () =>
-      !!sourceAsset.value &&
+      sourceAssets.value.length > 0 &&
       !!selectedCategoryId.value &&
       !!selectedStyleId.value &&
       !busy.value &&
@@ -51,6 +57,34 @@ export const useGenerationStore = defineStore('generation', () => {
   )
 
   const hasResult = computed(() => !!currentJob.value?.watermarked_result_download_url)
+
+  const isGenerationFinished = computed(
+    () => stage.value === 'succeeded' || stage.value === 'failed',
+  )
+
+  function resetForNewTask() {
+    if (busy.value && stage.value === 'generating') {
+      return false
+    }
+    sourceAssets.value = []
+    activeSourcePreviewIndex.value = 0
+    currentJob.value = null
+    stage.value = 'idle'
+    errorMessage.value = ''
+    statusMessage.value = '先上传商品实拍图'
+    progress.value = 0
+    estimatedUnits.value = null
+    productName.value = ''
+    promptHint.value = ''
+    outputType.value = 'scene'
+    return true
+  }
+
+  function prepareGeneratePage() {
+    if (isGenerationFinished.value) {
+      resetForNewTask()
+    }
+  }
 
   async function loadCatalogs() {
     const [cats, stys] = await Promise.all([listCategories(), listStyles()])
@@ -65,28 +99,38 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   async function refreshEstimate() {
-    if (!sourceAsset.value) {
+    if (!sourceAssets.value.length) {
       estimatedUnits.value = null
       return
     }
     const est = await estimateQuota({
       category_id: selectedCategoryId.value,
       style_id: selectedStyleId.value,
-      source_asset_id: sourceAsset.value.asset_id,
+      source_asset_id: sourceAssets.value[0]?.asset_id,
       prompt_hint: promptHint.value,
     })
     estimatedUnits.value = est.estimated_units
   }
 
-  async function uploadFile(file: File) {
+  async function uploadFiles(files: File[]) {
+    if (!files.length) return
     busy.value = true
     errorMessage.value = ''
     try {
-      const asset = await uploadSourceAsset(file)
-      sourceAsset.value = asset
-      sourcePreviewUrl.value = asset.download_url
+      const remaining = MAX_SOURCE_ASSETS - sourceAssets.value.length
+      if (remaining <= 0) {
+        throw new Error(`最多上传 ${MAX_SOURCE_ASSETS} 张实拍图`)
+      }
+      for (const file of files.slice(0, remaining)) {
+        const asset = await uploadSourceAsset(file)
+        sourceAssets.value.push(asset)
+      }
+      activeSourcePreviewIndex.value = Math.max(0, sourceAssets.value.length - 1)
       stage.value = 'ready'
-      statusMessage.value = '图片已确认，可以开始生成'
+      statusMessage.value =
+        sourceAssets.value.length > 1
+          ? `已上传 ${sourceAssets.value.length} 张实拍图，可以开始生成`
+          : '图片已确认，可以开始生成'
       await refreshEstimate()
     } catch (e) {
       errorMessage.value = e instanceof Error ? e.message : '上传失败'
@@ -94,6 +138,23 @@ export const useGenerationStore = defineStore('generation', () => {
     } finally {
       busy.value = false
     }
+  }
+
+  function removeSourceAsset(index: number) {
+    if (index < 0 || index >= sourceAssets.value.length) return
+    sourceAssets.value.splice(index, 1)
+    if (activeSourcePreviewIndex.value >= sourceAssets.value.length) {
+      activeSourcePreviewIndex.value = Math.max(0, sourceAssets.value.length - 1)
+    }
+    if (!sourceAssets.value.length) {
+      stage.value = 'idle'
+      statusMessage.value = '先上传商品实拍图'
+      estimatedUnits.value = null
+      return
+    }
+    stage.value = 'ready'
+    statusMessage.value = `已上传 ${sourceAssets.value.length} 张实拍图，可以开始生成`
+    void refreshEstimate()
   }
 
   async function acceptPrivacyAgreement() {
@@ -115,7 +176,7 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   async function startGeneration() {
-    if (!sourceAsset.value) throw new Error('请先上传商品照片')
+    if (!sourceAssets.value.length) throw new Error('请先上传商品照片')
     if (!userStore.hasPrivacyAgreement) throw new Error('请先同意隐私协议')
     busy.value = true
     stage.value = 'generating'
@@ -125,7 +186,7 @@ export const useGenerationStore = defineStore('generation', () => {
       const hint = [productName.value, promptHint.value].filter(Boolean).join('；')
       const job = await createJob({
         client_request_id: buildRequestId(),
-        source_asset_id: sourceAsset.value.asset_id,
+        source_asset_ids: sourceAssets.value.map((asset) => asset.asset_id),
         category_id: selectedCategoryId.value,
         style_id: selectedStyleId.value,
         prompt_hint: hint,
@@ -161,8 +222,10 @@ export const useGenerationStore = defineStore('generation', () => {
     productName,
     outputType,
     promptHint,
-    sourceAsset,
+    sourceAssets,
     sourcePreviewUrl,
+    sourcePreviewUrls,
+    activeSourcePreviewIndex,
     currentJob,
     historyItems,
     stage,
@@ -173,10 +236,15 @@ export const useGenerationStore = defineStore('generation', () => {
     estimatedUnits,
     canGenerate,
     hasResult,
+    isGenerationFinished,
+    maxSourceAssets: MAX_SOURCE_ASSETS,
+    resetForNewTask,
+    prepareGeneratePage,
     loadCatalogs,
     loadHistory,
     refreshEstimate,
-    uploadFile,
+    uploadFiles,
+    removeSourceAsset,
     acceptPrivacyAgreement,
     startGeneration,
   }

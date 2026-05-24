@@ -21,6 +21,8 @@ from app.services.quota_service import freeze_quota
 from app.services.oss import generate_presigned_download_url
 from app.workers.celery_app import celery_app
 
+MAX_SOURCE_ASSETS = 6
+
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
@@ -203,6 +205,28 @@ async def _load_source_asset(db: AsyncSession, tenant_id: uuid.UUID, source_asse
     return asset
 
 
+def _dedupe_source_asset_ids(source_asset_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    seen: set[uuid.UUID] = set()
+    ordered: list[uuid.UUID] = []
+    for asset_id in source_asset_ids:
+        if asset_id in seen:
+            continue
+        seen.add(asset_id)
+        ordered.append(asset_id)
+    return ordered
+
+
+async def _load_source_assets(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    source_asset_ids: list[uuid.UUID],
+) -> list[GenerationAsset]:
+    assets: list[GenerationAsset] = []
+    for asset_id in source_asset_ids:
+        assets.append(await _load_source_asset(db, tenant_id, asset_id))
+    return assets
+
+
 async def _load_active_rule(db: AsyncSession, tenant_id: uuid.UUID) -> PromoRule | None:
     return await db.scalar(
         select(PromoRule)
@@ -217,15 +241,31 @@ async def create_generation_job(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID | None = None,
     client_request_id: str,
-    source_asset_id: uuid.UUID,
+    source_asset_id: uuid.UUID | None = None,
+    source_asset_ids: list[uuid.UUID] | None = None,
     category_id: uuid.UUID | None = None,
     style_id: uuid.UUID | None = None,
     prompt_hint: str = "",
     schedule_task: bool = True,
 ) -> GenerationJob:
+    normalized_source_asset_ids = _dedupe_source_asset_ids(
+        source_asset_ids or ([source_asset_id] if source_asset_id else [])
+    )
+    if not normalized_source_asset_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one source asset is required",
+        )
+    if len(normalized_source_asset_ids) > MAX_SOURCE_ASSETS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"At most {MAX_SOURCE_ASSETS} source images are allowed",
+        )
+    primary_source_asset_id = normalized_source_asset_ids[0]
     request_snapshot = {
         "client_request_id": client_request_id,
-        "source_asset_id": str(source_asset_id),
+        "source_asset_id": str(primary_source_asset_id),
+        "source_asset_ids": [str(asset_id) for asset_id in normalized_source_asset_ids],
         "category_id": str(category_id) if category_id else None,
         "style_id": str(style_id) if style_id else None,
         "prompt_hint": prompt_hint,
@@ -262,7 +302,7 @@ async def create_generation_job(
         await db.refresh(existing)
         return existing
 
-    source_asset = await _load_source_asset(db, tenant_id, source_asset_id)
+    source_assets = await _load_source_assets(db, tenant_id, normalized_source_asset_ids)
     category = await _load_category(db, tenant_id, category_id)
     style = await _load_style(db, tenant_id, style_id)
     active_rule = await _load_active_rule(db, tenant_id)
@@ -272,13 +312,26 @@ async def create_generation_job(
             detail="Please accept the generation privacy agreement first",
         )
 
+    source_asset_snapshots = [_asset_snapshot(asset) for asset in source_assets]
     prompt_snapshot = {
-        "source_asset": _asset_snapshot(source_asset),
+        "source_assets": source_asset_snapshots,
+        "source_asset": source_asset_snapshots[0],
         "category": _category_snapshot(category),
         "style": _style_snapshot(style),
         "prompt_hint": prompt_hint,
     }
     rule_snapshot = _promo_rule_snapshot(active_rule)
+    from app.services.term_selection import resolve_terms_for_generation
+
+    resolved_terms = await resolve_terms_for_generation(
+        db,
+        tenant_id=tenant_id,
+        category_id=category.id if category else None,
+        style_id=style.id if style else None,
+        strategy=str(rule_snapshot.get("term_selection_strategy") or "weighted_random"),
+        seed=client_request_id,
+    )
+    prompt_snapshot["resolved_terms"] = resolved_terms
     rule_snapshot["provider"] = "alibaba-dashscope"
     rule_snapshot["model_name"] = "wan2.7-image"
     rule_snapshot["watermark_policy"] = "separate_oss_assets"
@@ -298,7 +351,7 @@ async def create_generation_job(
         status="queued",
         category_id=category.id if category else None,
         style_id=style.id if style else None,
-        source_asset_id=source_asset.id,
+        source_asset_id=primary_source_asset_id,
         provider="alibaba-dashscope",
         model_name="wan2.7-image",
         rule_snapshot=rule_snapshot,
@@ -321,7 +374,8 @@ async def create_generation_job(
         message="Generation job queued",
         payload={
             "client_request_id": client_request_id,
-            "source_asset_id": str(source_asset.id),
+            "source_asset_id": str(primary_source_asset_id),
+            "source_asset_ids": [str(asset_id) for asset_id in normalized_source_asset_ids],
             "category_id": str(category.id) if category else None,
             "style_id": str(style.id) if style else None,
             "task_id": job.task_id,

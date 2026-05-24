@@ -24,9 +24,12 @@ export async function uploadSourceAsset(file: File): Promise<GenerationAsset> {
   })
 }
 
+export const MAX_SOURCE_ASSETS = 6
+
 export function createJob(payload: {
   client_request_id: string
-  source_asset_id: string
+  source_asset_id?: string
+  source_asset_ids?: string[]
   category_id?: string
   style_id?: string
   prompt_hint?: string

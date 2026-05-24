@@ -37,7 +37,29 @@ def _resolve_style_cover_url(style_snapshot: dict) -> str:
     return generate_presigned_download_url(url)
 
 
-async def _load_source_asset(db, job: GenerationJob) -> GenerationAsset:
+async def _load_source_assets(db, job: GenerationJob) -> list[GenerationAsset]:
+    prompt_snapshot = job.prompt_snapshot or {}
+    source_assets_snapshot = prompt_snapshot.get("source_assets")
+    if isinstance(source_assets_snapshot, list) and source_assets_snapshot:
+        asset_ids: list[uuid.UUID] = []
+        for snapshot in source_assets_snapshot:
+            asset_id = snapshot.get("id")
+            if asset_id:
+                asset_ids.append(uuid.UUID(str(asset_id)))
+        if asset_ids:
+            assets: list[GenerationAsset] = []
+            for asset_id in asset_ids:
+                asset = await db.scalar(
+                    select(GenerationAsset).where(
+                        GenerationAsset.tenant_id == job.tenant_id,
+                        GenerationAsset.id == asset_id,
+                    )
+                )
+                if not asset:
+                    raise RuntimeError(f"Source asset not found for generation job: {asset_id}")
+                assets.append(asset)
+            return assets
+
     source_asset = await db.scalar(
         select(GenerationAsset).where(
             GenerationAsset.tenant_id == job.tenant_id,
@@ -46,7 +68,7 @@ async def _load_source_asset(db, job: GenerationJob) -> GenerationAsset:
     )
     if not source_asset:
         raise RuntimeError("Source asset not found for generation job")
-    return source_asset
+    return [source_asset]
 
 
 async def _download_image_bytes(url: str) -> tuple[bytes, str]:
@@ -59,8 +81,8 @@ async def _download_image_bytes(url: str) -> tuple[bytes, str]:
 
 async def _run_generation_job(db, job_id: uuid.UUID) -> dict[str, Any]:
     job = await _load_job(db, job_id)
-    source_asset = await _load_source_asset(db, job)
-    context = freeze_generation_job_context(job, source_asset)
+    source_assets = await _load_source_assets(db, job)
+    context = freeze_generation_job_context(job, source_assets[0])
     now = datetime.now(timezone.utc)
 
     job.status = "running"
@@ -74,6 +96,7 @@ async def _run_generation_job(db, job_id: uuid.UUID) -> dict[str, Any]:
         message="Generation job running",
         payload={
             "source_asset_id": str(job.source_asset_id),
+            "source_asset_ids": [str(asset.id) for asset in source_assets],
             "style_id": str(job.style_id) if job.style_id else None,
             "category_id": str(job.category_id) if job.category_id else None,
         },
@@ -85,7 +108,8 @@ async def _run_generation_job(db, job_id: uuid.UUID) -> dict[str, Any]:
         rule_snapshot = context.job.get("rule_snapshot", {})
         style_snapshot = prompt_snapshot.get("style") or {}
         category_snapshot = prompt_snapshot.get("category") or {}
-        source_download_url = generation_asset_download_url(source_asset)
+        source_download_urls = [generation_asset_download_url(asset) for asset in source_assets]
+        primary_source_url = source_download_urls[0]
         style_download_url = _resolve_style_cover_url(style_snapshot)
         prompt_hint = str(prompt_snapshot.get("prompt_hint") or "")
         vision_hint_parts = []
@@ -97,9 +121,8 @@ async def _run_generation_job(db, job_id: uuid.UUID) -> dict[str, Any]:
             vision_hint_parts.append(prompt_hint)
         vision_hint = "；".join(vision_hint_parts)
 
-        # Vision：分别分析实拍主体 + 风格模板；出图：实拍第1张（主体）+ 模板第2张（学版式）
         vision_analysis = await analyze_generation_vision(
-            source_image_url=source_download_url,
+            source_image_urls=source_download_urls,
             style_image_url=style_download_url or None,
             prompt_hint=vision_hint,
             provider_name=context.job.get("provider"),
@@ -110,16 +133,19 @@ async def _run_generation_job(db, job_id: uuid.UUID) -> dict[str, Any]:
             rule_snapshot=rule_snapshot,
             vision_analysis=vision_analysis,
         )
-        generation_image_urls = [source_download_url]
+        generation_image_urls = list(source_download_urls)
         if style_download_url:
             generation_image_urls.append(style_download_url)
-        image_preamble = build_image_role_preamble(has_style_template=bool(style_download_url))
+        image_preamble = build_image_role_preamble(
+            source_count=len(source_download_urls),
+            has_style_template=bool(style_download_url),
+        )
         prompt_text = f"{image_preamble}\n\n{prompt_bundle.generation_prompt}"
         image_provider = get_image_generation_provider(context.job.get("provider"))
         generated = await image_provider.generate(
             prompt=prompt_text,
             image_urls=generation_image_urls,
-            source_image_url=source_download_url,
+            source_image_url=primary_source_url,
             style_image_url=style_download_url or None,
             size=str(rule_snapshot.get("image_size") or "2K"),
             watermark=False,

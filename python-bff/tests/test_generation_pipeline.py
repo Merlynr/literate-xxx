@@ -132,6 +132,23 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
                 "height": 240,
                 "extra_metadata": None,
             },
+            "source_assets": [
+                {
+                    "id": str(SOURCE_ASSET_ID),
+                    "tenant_id": str(TENANT_ID),
+                    "asset_role": "source",
+                    "oss_bucket": "xxzx-assets",
+                    "oss_key": "uploads/source.jpg",
+                    "original_filename": "source.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 123,
+                    "sha256": "sha-source",
+                    "etag": "",
+                    "width": 120,
+                    "height": 240,
+                    "extra_metadata": None,
+                }
+            ],
             "style": {
                 "id": "style-1",
                 "tenant_id": str(TENANT_ID),
@@ -170,10 +187,10 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
         assert job_id == JOB_ID
         return job
 
-    async def fake_load_source_asset(db_arg, job_arg):
+    async def fake_load_source_assets(db_arg, job_arg):
         assert db_arg is db
         assert job_arg is job
-        return source_asset
+        return [source_asset]
 
     async def fake_record_job_event(db_arg, **kwargs):
         assert db_arg is db
@@ -186,15 +203,19 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
 
     async def fake_analyze_generation_vision(
         *,
-        source_image_url,
+        source_image_urls=None,
+        source_image_url=None,
         style_image_url=None,
         prompt_hint="",
         provider_name=None,
         model_name=None,
     ):
-        assert source_image_url == "https://signed.example/source.jpg"
+        urls = list(source_image_urls or [])
+        if not urls and source_image_url:
+            urls = [source_image_url]
+        assert urls == ["https://signed.example/source.jpg"]
         assert style_image_url == "https://signed.example/style.jpg"
-        assert prompt_hint == "keep the product centered"
+        assert "keep the product centered" in prompt_hint
         assert provider_name == "alibaba-dashscope"
         assert model_name == "wan2.7-image"
         return {
@@ -291,7 +312,7 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
         )
 
     monkeypatch.setattr(generation_worker, "_load_job", fake_load_job)
-    monkeypatch.setattr(generation_worker, "_load_source_asset", fake_load_source_asset)
+    monkeypatch.setattr(generation_worker, "_load_source_assets", fake_load_source_assets)
     monkeypatch.setattr(generation_worker, "record_job_event", fake_record_job_event)
     monkeypatch.setattr(generation_worker, "generation_asset_download_url", fake_generation_asset_download_url)
     monkeypatch.setattr(generation_worker, "analyze_generation_vision", fake_analyze_generation_vision)
@@ -322,7 +343,7 @@ async def test_generation_worker_pipeline_with_fakes(monkeypatch):
     assert provider_calls[0]["source_image_url"] == "https://signed.example/source.jpg"
     assert "第1张" in provider_calls[0]["prompt"]
     assert "PROMPT TEXT" in provider_calls[0]["prompt"]
-    assert prompt_calls[0]["vision_analysis"] == {"background": "studio", "lighting": "soft"}
+    assert prompt_calls[0]["vision_analysis"]["style_reference"] == {"background": "studio", "lighting": "soft"}
     assert persist_calls[0]["raw_content"] == b"raw-image-bytes"
     assert persist_calls[0]["watermarked_content"] == b"watermarked-bytes"
     assert persist_calls[0]["raw_metadata"]["prompt_hash"] == "a" * 64

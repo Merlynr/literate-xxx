@@ -57,6 +57,12 @@ def test_prompt_assembler_uses_frozen_snapshots_and_prompt_hash():
         "must_preserve": ["label"],
         "defects_to_fix": ["noise"],
     }
+    prompt_snapshot["resolved_terms"] = [
+        {"id": "t1", "type": "prefix", "content": "突出商品主体", "weight": 10, "sort_order": 1, "scope": None},
+        {"id": "t2", "type": "positive", "content": "新鲜现采", "weight": 12, "sort_order": 1, "scope": None},
+        {"id": "t3", "type": "negative", "content": "模糊", "weight": 10, "sort_order": 1, "scope": None},
+        {"id": "t4", "type": "brand", "content": "XX甄选", "weight": 10, "sort_order": 1, "scope": None},
+    ]
 
     bundle = assemble_generation_prompt(
         prompt_snapshot=prompt_snapshot,
@@ -73,6 +79,14 @@ def test_prompt_assembler_uses_frozen_snapshots_and_prompt_hash():
     assert bundle.prompt_snapshot["vision_analysis"]["background"] == "studio"
     assert "keep the product centered" in bundle.generation_prompt
     assert "Warm farm poster" in bundle.generation_prompt
+    assert "【默认词条】" in bundle.generation_prompt
+    assert "【运营词条】" in bundle.generation_prompt
+    assert "新鲜现采" in bundle.generation_prompt
+    assert "模糊" in bundle.generation_prompt
+    assert "XX甄选" in bundle.generation_prompt
+    assert "主体角度" in bundle.generation_prompt
+    assert "背景配色" in bundle.generation_prompt
+    assert "模板版式要求" in bundle.generation_prompt
 
     original = deepcopy(bundle)
     prompt_snapshot["source_asset"]["oss_key"] = "mutated.jpg"

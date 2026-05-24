@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_tenant_id, get_current_user, get_db
@@ -12,6 +12,7 @@ from app.models.generation_asset import GenerationAsset
 from app.models.generation_job import GenerationJob
 from app.models.user import User
 from app.services.generation_jobs import (
+    MAX_SOURCE_ASSETS,
     confirm_generation_asset,
     create_generation_job,
     generation_asset_download_url,
@@ -57,10 +58,20 @@ class GenerationAssetResponse(BaseModel):
 
 class GenerationJobCreateRequest(BaseModel):
     client_request_id: str = Field(..., min_length=1, max_length=64)
-    source_asset_id: uuid.UUID
+    source_asset_id: uuid.UUID | None = None
+    source_asset_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=MAX_SOURCE_ASSETS)
     category_id: uuid.UUID | None = None
     style_id: uuid.UUID | None = None
     prompt_hint: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def normalize_source_assets(self) -> "GenerationJobCreateRequest":
+        if self.source_asset_ids:
+            return self
+        if self.source_asset_id:
+            object.__setattr__(self, "source_asset_ids", [self.source_asset_id])
+            return self
+        raise ValueError("source_asset_id or source_asset_ids is required")
 
 
 class GenerationJobResponse(BaseModel):
@@ -82,6 +93,7 @@ class GenerationJobResponse(BaseModel):
     raw_result_download_url: str | None = None
     watermarked_result_download_url: str | None = None
     source_preview_url: str | None = None
+    source_preview_urls: list[str] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -106,7 +118,12 @@ def _asset_response(asset: GenerationAsset) -> GenerationAssetResponse:
     )
 
 
-def _job_response(job: GenerationJob, *, source_preview_url: str | None = None) -> GenerationJobResponse:
+def _job_response(
+    job: GenerationJob,
+    *,
+    source_preview_url: str | None = None,
+    source_preview_urls: list[str] | None = None,
+) -> GenerationJobResponse:
     raw_result_download_url = None
     watermarked_result_download_url = None
     return GenerationJobResponse(
@@ -128,9 +145,30 @@ def _job_response(job: GenerationJob, *, source_preview_url: str | None = None) 
         raw_result_download_url=raw_result_download_url,
         watermarked_result_download_url=watermarked_result_download_url,
         source_preview_url=source_preview_url,
+        source_preview_urls=source_preview_urls,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
+
+
+async def _source_preview_urls(db: AsyncSession, job: GenerationJob, tenant_id: uuid.UUID) -> list[str]:
+    prompt_snapshot = job.prompt_snapshot or {}
+    source_assets = prompt_snapshot.get("source_assets")
+    if isinstance(source_assets, list) and source_assets:
+        urls: list[str] = []
+        for snapshot in source_assets:
+            asset_id = snapshot.get("id")
+            if not asset_id:
+                continue
+            asset = await db.get(GenerationAsset, uuid.UUID(str(asset_id)))
+            if asset and asset.tenant_id == tenant_id:
+                urls.append(generation_asset_download_url(asset))
+        if urls:
+            return urls
+    source_asset = await db.get(GenerationAsset, job.source_asset_id)
+    if source_asset and source_asset.tenant_id == tenant_id:
+        return [generation_asset_download_url(source_asset)]
+    return []
 
 
 @router.post("/generation-assets/confirm", response_model=GenerationAssetResponse)
@@ -169,7 +207,7 @@ async def create_job(
             tenant_id=tenant_id,
             user_id=current_user.id,
             client_request_id=req.client_request_id,
-            source_asset_id=req.source_asset_id,
+            source_asset_ids=req.source_asset_ids,
             category_id=req.category_id,
             style_id=req.style_id,
             prompt_hint=req.prompt_hint,
@@ -195,6 +233,7 @@ async def create_job(
         payload={
             "client_request_id": req.client_request_id,
             "source_asset_id": str(job.source_asset_id),
+            "source_asset_ids": (job.request_snapshot or {}).get("source_asset_ids") or [str(job.source_asset_id)],
             "category_id": str(job.category_id) if job.category_id else None,
             "style_id": str(job.style_id) if job.style_id else None,
             "task_id": job.task_id,
@@ -202,9 +241,12 @@ async def create_job(
     )
     await db.commit()
     await db.refresh(job)
-    source_asset = await db.get(GenerationAsset, job.source_asset_id)
-    source_preview_url = generation_asset_download_url(source_asset) if source_asset else None
-    response = _job_response(job, source_preview_url=source_preview_url)
+    preview_urls = await _source_preview_urls(db, job, tenant_id)
+    response = _job_response(
+        job,
+        source_preview_url=preview_urls[0] if preview_urls else None,
+        source_preview_urls=preview_urls or None,
+    )
     return response
 
 
@@ -231,9 +273,12 @@ async def read_job(
         raw_result_download_url = generation_asset_download_url(job.__dict__["raw_result_asset"])
     if job.__dict__.get("watermarked_result_asset"):
         watermarked_result_download_url = generation_asset_download_url(job.__dict__["watermarked_result_asset"])
-    source_asset = await db.get(GenerationAsset, job.source_asset_id)
-    source_preview_url = generation_asset_download_url(source_asset) if source_asset and source_asset.tenant_id == tenant_id else None
-    response = _job_response(job, source_preview_url=source_preview_url)
+    preview_urls = await _source_preview_urls(db, job, tenant_id)
+    response = _job_response(
+        job,
+        source_preview_url=preview_urls[0] if preview_urls else None,
+        source_preview_urls=preview_urls or None,
+    )
     response.raw_result_download_url = raw_result_download_url
     response.watermarked_result_download_url = watermarked_result_download_url
     return response
