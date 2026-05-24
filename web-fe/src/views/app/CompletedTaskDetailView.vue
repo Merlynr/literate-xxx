@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getJob } from '@/api/generation'
+import CachedImage from '@/components/CachedImage.vue'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 import type { GenerationJob } from '@/types'
 
@@ -72,10 +73,12 @@ onMounted(async () => {
         <div class="page-card p-4">
           <h2 class="mb-3 font-semibold text-brand-700">生成原图</h2>
           <div class="flex min-h-[280px] items-center justify-center rounded-xl bg-cream-100">
-            <img
+            <CachedImage
               v-if="rawImageUrl"
               :src="rawImageUrl"
-              class="max-h-[420px] max-w-full rounded-lg object-contain"
+              :job-id="job.job_id"
+              image-role="raw"
+              img-class="max-h-[420px] max-w-full rounded-lg object-contain"
               alt="生成原图"
             />
             <p v-else class="text-sm text-brand-900/40">暂无原图</p>
@@ -120,9 +123,11 @@ onMounted(async () => {
 
           <div v-if="job.source_preview_url" class="page-card p-4">
             <h2 class="mb-2 text-sm font-semibold text-brand-700">商品实拍（参考）</h2>
-            <img
+            <CachedImage
               :src="job.source_preview_url"
-              class="max-h-40 rounded-lg object-contain"
+              :job-id="job.job_id"
+              image-role="source"
+              img-class="max-h-40 rounded-lg object-contain"
               alt="实拍"
             />
           </div>

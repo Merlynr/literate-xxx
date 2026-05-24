@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import CachedImage from '@/components/CachedImage.vue'
 import { listCompletedHistory } from '@/api/generation'
 import { enrichHistoryItems } from '@/utils/jobMeta'
+import { prepareForceRefresh } from '@/utils/refresh'
 import type { GenerationHistoryItem } from '@/types'
 
 const router = useRouter()
 const items = ref<GenerationHistoryItem[]>([])
 const loading = ref(false)
+const reloadKey = ref(0)
 
-async function load() {
+async function load(force = false) {
   loading.value = true
   try {
-    const rows = await listCompletedHistory(0, 100)
+    if (force) {
+      prepareForceRefresh()
+      reloadKey.value += 1
+    }
+    const rows = await listCompletedHistory(0, 100, { force })
     items.value = await enrichHistoryItems(rows)
   } finally {
     loading.value = false
@@ -39,7 +46,7 @@ onMounted(load)
     </header>
 
     <div class="mb-4 flex gap-3">
-      <el-button :loading="loading" @click="load">刷新</el-button>
+      <el-button :loading="loading" @click="load(true)">刷新</el-button>
       <router-link to="/app/generate">
         <el-button type="primary">发起新生成</el-button>
       </router-link>
@@ -53,11 +60,14 @@ onMounted(load)
       <el-table :data="items" stripe class="cursor-pointer" @row-click="onRowClick">
         <el-table-column label="预览" width="88">
           <template #default="{ row }">
-            <img
+            <CachedImage
               v-if="row.raw_result_download_url || row.watermarked_result_download_url || row.source_preview_url"
-              :src="(row.raw_result_download_url || row.watermarked_result_download_url || row.source_preview_url)!"
-              class="h-14 w-14 rounded-lg object-cover"
-              alt=""
+              :key="`${row.job_id}-${reloadKey}`"
+              :src="row.raw_result_download_url || row.watermarked_result_download_url || row.source_preview_url"
+              :job-id="row.job_id"
+              :image-role="row.raw_result_download_url ? 'raw' : row.watermarked_result_download_url ? 'watermark' : 'source'"
+              :reload-key="reloadKey"
+              img-class="h-14 w-14 rounded-lg object-cover"
             />
           </template>
         </el-table-column>

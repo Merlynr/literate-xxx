@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import CachedImage from '@/components/CachedImage.vue'
 import QuotaSummaryCard from '@/components/QuotaSummaryCard.vue'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 import { getQuotaSummary } from '@/api/quota'
@@ -67,11 +68,12 @@ onMounted(async () => {
           :key="item.job_id"
           class="page-card flex gap-3 p-3"
         >
-          <img
+          <CachedImage
             v-if="item.watermarked_result_download_url || item.source_preview_url"
-            :src="(item.watermarked_result_download_url || item.source_preview_url)!"
-            class="h-16 w-16 rounded-lg object-cover"
-            alt=""
+            :src="item.watermarked_result_download_url || item.source_preview_url"
+            :job-id="item.job_id"
+            :image-role="item.watermarked_result_download_url ? 'watermark' : 'source'"
+            img-class="h-16 w-16 rounded-lg object-cover"
           />
           <div class="min-w-0 flex-1">
             <JobStatusBadge :status="item.status" />

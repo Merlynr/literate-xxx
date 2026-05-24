@@ -1,4 +1,6 @@
 import { request } from './request'
+import { cachedFetch } from '@/utils/memoryCache'
+import { QUOTA_TTL_MS } from './cacheConfig'
 import type { QuotaLedgerItem, QuotaSummary } from '@/types'
 
 export interface QuotaEstimateResponse {
@@ -7,8 +9,13 @@ export interface QuotaEstimateResponse {
   plan_code: string
 }
 
-export function getQuotaSummary() {
-  return request<QuotaSummary>({ url: '/quota/summary' })
+export function getQuotaSummary(options?: { force?: boolean }) {
+  return cachedFetch(
+    'quota:summary',
+    QUOTA_TTL_MS,
+    () => request<QuotaSummary>({ url: '/quota/summary' }),
+    options,
+  )
 }
 
 export function estimateQuota(payload: {

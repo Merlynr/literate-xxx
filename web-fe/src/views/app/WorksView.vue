@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import CachedImage from '@/components/CachedImage.vue'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 import { useGenerationStore } from '@/stores/generation'
+import { prepareForceRefresh } from '@/utils/refresh'
 
 const props = defineProps<{ tab?: string }>()
 const route = useRoute()
@@ -10,14 +12,19 @@ const router = useRouter()
 const gen = useGenerationStore()
 const statusFilter = ref('')
 const loading = ref(false)
+const reloadKey = ref(0)
 
 const activeTab = computed(() => props.tab || (route.path.includes('tasks') ? 'tasks' : 'gallery'))
 
-onMounted(async () => {
+async function refresh() {
   loading.value = true
-  await gen.loadHistory()
+  prepareForceRefresh()
+  reloadKey.value += 1
+  await gen.loadHistory({ force: true })
   loading.value = false
-})
+}
+
+onMounted(refresh)
 
 const filtered = computed(() => {
   if (!statusFilter.value) return gen.historyItems
@@ -42,7 +49,7 @@ const filtered = computed(() => {
         <el-option label="成功" value="succeeded" />
         <el-option label="失败" value="failed" />
       </el-select>
-      <el-button :loading="loading" @click="gen.loadHistory()">刷新</el-button>
+      <el-button :loading="loading" @click="refresh">刷新</el-button>
       <router-link to="/app/works/completed">
         <el-button>已完成任务</el-button>
       </router-link>
@@ -61,11 +68,14 @@ const filtered = computed(() => {
           :href="item.watermarked_result_download_url || item.source_preview_url || '#'"
           target="_blank"
         >
-          <img
+          <CachedImage
             v-if="item.watermarked_result_download_url || item.source_preview_url"
-            :src="(item.watermarked_result_download_url || item.source_preview_url)!"
-            class="aspect-square w-full object-cover"
-            alt=""
+            :key="`${item.job_id}-${reloadKey}`"
+            :src="item.watermarked_result_download_url || item.source_preview_url"
+            :job-id="item.job_id"
+            :image-role="item.watermarked_result_download_url ? 'watermark' : 'source'"
+            :reload-key="reloadKey"
+            img-class="aspect-square w-full object-cover"
           />
         </a>
         <div class="p-3">

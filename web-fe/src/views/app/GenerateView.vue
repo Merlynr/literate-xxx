@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onActivated, onMounted, ref } from 'vue'
+import CachedImage from '@/components/CachedImage.vue'
 import { useGenerationStore } from '@/stores/generation'
 import { useUserStore } from '@/stores/user'
 
@@ -153,7 +154,12 @@ const previewUrl = () => {
               :class="gen.activeSourcePreviewIndex === index ? 'border-gold-600 ring-2 ring-gold-200' : 'border-brand-700/10'"
               @click="selectSourcePreview(index)"
             >
-              <img :src="asset.download_url" class="aspect-square w-full object-cover" alt="source" />
+              <CachedImage
+                :src="asset.download_url"
+                :cache-key="`asset:${asset.asset_id}`"
+                img-class="aspect-square w-full object-cover"
+                alt="source"
+              />
               <button
                 type="button"
                 class="absolute right-1 top-1 rounded bg-black/55 px-1.5 py-0.5 text-xs text-white"
@@ -218,10 +224,13 @@ const previewUrl = () => {
         <div
           class="flex min-h-[400px] items-center justify-center overflow-hidden rounded-xl bg-cream-100"
         >
-          <img
+          <CachedImage
             v-if="previewUrl()"
-            :src="previewUrl()!"
-            class="max-h-[70vh] max-w-full object-contain"
+            :src="previewUrl()"
+            :job-id="gen.currentJob?.job_id"
+            :image-role="previewTab === 'source' ? 'source' : previewTab === 'raw' ? 'raw' : 'watermark'"
+            :cache-key="previewTab === 'source' && !gen.currentJob?.job_id ? `upload:${gen.sourceAssets[gen.activeSourcePreviewIndex]?.asset_id}` : undefined"
+            img-class="max-h-[70vh] max-w-full object-contain"
             alt="preview"
           />
           <p v-else class="text-sm text-brand-900/40">上传图片后在此预览</p>

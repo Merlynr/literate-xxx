@@ -12,6 +12,7 @@ import {
 } from '@/api/generation'
 import { acceptPrivacy } from '@/api/privacy'
 import { estimateQuota } from '@/api/quota'
+import { invalidateAfterNewGeneration } from '@/utils/imageCache'
 import type { Category, GenerationAsset, GenerationHistoryItem, GenerationJob, Style } from '@/types'
 import { useUserStore } from './user'
 
@@ -86,16 +87,19 @@ export const useGenerationStore = defineStore('generation', () => {
     }
   }
 
-  async function loadCatalogs() {
-    const [cats, stys] = await Promise.all([listCategories(), listStyles()])
+  async function loadCatalogs(options?: { force?: boolean }) {
+    const [cats, stys] = await Promise.all([
+      listCategories(options),
+      listStyles(options),
+    ])
     categories.value = cats
     styles.value = stys
     if (!selectedCategoryId.value && cats[0]) selectedCategoryId.value = cats[0].id
     if (!selectedStyleId.value && stys[0]) selectedStyleId.value = stys[0].id
   }
 
-  async function loadHistory() {
-    historyItems.value = await listHistory(0, 50)
+  async function loadHistory(options?: { force?: boolean }) {
+    historyItems.value = await listHistory(0, 50, undefined, options)
   }
 
   async function refreshEstimate() {
@@ -163,13 +167,13 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   async function pollJob(jobId: string) {
-    let latest = await getJob(jobId)
+    let latest = await getJob(jobId, { skipCache: true })
     let attempts = 0
     while (attempts < 40 && latest.status !== 'succeeded' && latest.status !== 'failed') {
       progress.value = Math.min(95, 30 + attempts * 2)
       statusMessage.value = latest.status === 'running' ? 'AI 正在生成中…' : '任务排队中…'
       await wait(2000)
-      latest = await getJob(jobId)
+      latest = await getJob(jobId, { skipCache: true })
       attempts += 1
     }
     return latest
@@ -199,11 +203,12 @@ export const useGenerationStore = defineStore('generation', () => {
         stage.value = 'succeeded'
         progress.value = 100
         statusMessage.value = '生成完成'
+        invalidateAfterNewGeneration()
       } else if (latest.status === 'failed') {
         stage.value = 'failed'
         errorMessage.value = latest.error_message || '生成失败'
       }
-      await loadHistory()
+      await loadHistory({ force: true })
       return latest
     } catch (e) {
       stage.value = 'failed'
