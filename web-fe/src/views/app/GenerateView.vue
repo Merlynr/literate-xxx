@@ -68,7 +68,7 @@ async function submitGeneration() {
     </header>
 
     <div class="flex flex-col gap-6 xl:flex-row">
-      <div class="page-card w-full shrink-0 space-y-5 p-5 xl:w-80">
+      <div class="page-card w-full shrink-0 space-y-3.5 p-4 xl:w-72">
         <el-alert
           v-if="!userStore.hasPrivacyAgreement"
           title="首次生成前需同意隐私协议"
@@ -92,17 +92,20 @@ async function submitGeneration() {
           <el-input v-model="gen.productName" placeholder="例如：红皮土豆 5斤装" />
         </div>
 
-        <div>
-          <label class="mb-2 block text-sm font-medium">出图类型</label>
-          <el-radio-group v-model="gen.outputType" class="flex flex-col gap-2">
-            <el-radio value="white">白底主图</el-radio>
-            <el-radio value="scene">场景图</el-radio>
-            <el-radio value="detail">详情页图</el-radio>
+        <div class="output-type-field">
+          <div class="mb-1.5 flex items-center justify-between gap-2">
+            <label class="text-sm font-medium text-brand-900">出图类型</label>
+            <span class="shrink-0 text-[11px] text-brand-900/45">主图 · 场景 · 详情</span>
+          </div>
+          <el-radio-group v-model="gen.outputType" size="small" class="output-type-radio">
+            <el-radio-button value="white">白底主图</el-radio-button>
+            <el-radio-button value="scene">场景图</el-radio-button>
+            <el-radio-button value="detail">详情页</el-radio-button>
           </el-radio-group>
         </div>
 
         <div>
-          <label class="mb-2 block text-sm font-medium">类目</label>
+          <label class="mb-1 block text-sm font-medium">类目</label>
           <el-select v-model="gen.selectedCategoryId" class="w-full" @change="gen.refreshEstimate()">
             <el-option
               v-for="c in gen.categories"
@@ -114,7 +117,7 @@ async function submitGeneration() {
         </div>
 
         <div>
-          <label class="mb-2 block text-sm font-medium">风格</label>
+          <label class="mb-1 block text-sm font-medium">风格</label>
           <el-select v-model="gen.selectedStyleId" class="w-full" @change="gen.refreshEstimate()">
             <el-option v-for="s in gen.styles" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
@@ -128,7 +131,7 @@ async function submitGeneration() {
             </span>
           </label>
           <div
-            class="cursor-pointer rounded-xl border-2 border-dashed border-brand-700/25 bg-cream-50 p-6 text-center text-sm text-brand-900/60 hover:border-gold-600"
+            class="cursor-pointer rounded-lg border-2 border-dashed border-brand-700/25 bg-cream-50 px-3 py-4 text-center text-sm text-brand-900/60 hover:border-gold-600"
             @click="pickFile"
           >
             点击选择图片，可一次选多张<br />
@@ -216,3 +219,30 @@ async function submitGeneration() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.output-type-radio {
+  display: flex;
+  width: 100%;
+}
+
+.output-type-radio :deep(.el-radio-button) {
+  flex: 1;
+}
+
+.output-type-radio :deep(.el-radio-button__inner) {
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 12px;
+  line-height: 1.25;
+  border-radius: 6px;
+}
+
+.output-type-radio :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-radius: 6px 0 0 6px;
+}
+
+.output-type-radio :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-radius: 0 6px 6px 0;
+}
+</style>

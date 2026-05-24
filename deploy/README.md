@@ -103,7 +103,111 @@ sudo journalctl -u xxzx-celery-beat -f
 
 Beat 调度已在 `python-bff/app/workers/celery_app.py` 的 `beat_schedule` 中配置，无需改代码。
 
-## 6. 配置 Nginx 反向代理 (可选)
+## 6. Web 前端部署 (`web-fe`)
+
+前端是 **Vite 构建的静态站点**（`dist/`），用 Nginx（或 Caddy）托管；接口仍走 `python-bff`（默认 `8000`）。
+
+### 6.1 构建（本地或服务器均可）
+
+```bash
+cd web-fe
+npm install
+
+# 生产 API 地址（构建时写入 JS，按你的域名/IP 修改）
+cp .env.example .env.production
+# 编辑 .env.production，例如：
+# VITE_API_BASE_URL=http://8.141.7.56:8000/api/v1
+# 若 Nginx 把 /api 反代到本机 8000，可写：
+# VITE_API_BASE_URL=/api/v1
+
+npm run build
+# 产物在 web-fe/dist/
+```
+
+### 6.2 上传到服务器
+
+```bash
+# 在本地（把路径改成你的服务器）
+scp -r web-fe/dist/* root@8.141.7.56:/var/www/xxzx-web/
+
+# 或在服务器上 git pull 后直接构建
+ssh root@8.141.7.56
+cd /root/literate-xxx/web-fe   # 或 /opt/xxzx/web-fe
+npm install
+npm run build
+sudo mkdir -p /var/www/xxzx-web
+sudo rsync -a --delete dist/ /var/www/xxzx-web/
+```
+
+### 6.3 Nginx（推荐：同一域名，静态 + API）
+
+安装 Nginx 后新建站点，例如 `/etc/nginx/conf.d/xxzx-web.conf`：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;   # 或服务器公网 IP
+
+    root /var/www/xxzx-web;
+    index index.html;
+
+    # Vue Router history 模式：除静态资源外回落到 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 与构建变量 VITE_API_BASE_URL=/api/v1 配套
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+浏览器访问：`http://your-domain.com/app/login`（商家端）、`/admin/login`（运营端）。
+
+**构建变量对照**
+
+| `VITE_API_BASE_URL` | 说明 |
+|---------------------|------|
+| `/api/v1` | 与上面 Nginx `/api/` 反代配套（推荐，无跨域） |
+| `http://IP:8000/api/v1` | 前端、API 不同端口；BFF 已开 CORS，也可用 |
+
+### 6.4 仅静态、API 仍用 8000 端口
+
+不配置 Nginx 反代时，`.env.production` 写完整地址：
+
+```env
+VITE_API_BASE_URL=http://8.141.7.56:8000/api/v1
+```
+
+Nginx 只托管 `dist`，并开放 80；安全组需同时放行 **80** 与 **8000**。
+
+### 6.5 更新发布
+
+```bash
+cd /root/literate-xxx/web-fe
+git pull
+npm run build
+sudo rsync -a --delete dist/ /var/www/xxzx-web/
+```
+
+无需重启 BFF；用户浏览器 **强刷**（Ctrl+F5）即可。
+
+---
+
+## 7. 仅 API 的 Nginx 反代（无 Web 静态站时）
+
+若暂时只部署后端、不部署 `web-fe`，可把整个站点指到 FastAPI：
 
 ```nginx
 server {
@@ -120,7 +224,7 @@ server {
 }
 ```
 
-## 7. 防火墙配置
+## 8. 防火墙配置
 
 ```bash
 # 开放端口
@@ -130,7 +234,7 @@ sudo firewall-cmd --permanent --add-port=443/tcp
 sudo firewall-cmd --reload
 ```
 
-## 日志位置
+## 9. 日志位置
 
 | 服务 | 日志路径 |
 |------|----------|
