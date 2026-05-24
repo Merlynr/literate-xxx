@@ -15,6 +15,7 @@ from app.services.generation_jobs import (
     MAX_SOURCE_ASSETS,
     confirm_generation_asset,
     create_generation_job,
+    delete_generation_job,
     dispatch_generation_job,
     generation_asset_download_url,
     get_generation_job,
@@ -288,3 +289,13 @@ async def read_job(
     response.raw_result_download_url = raw_result_download_url
     response.watermarked_result_download_url = watermarked_result_download_url
     return response
+
+
+@router.delete("/generation-jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_job(
+    job_id: uuid.UUID,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+):
+    await delete_generation_job(db, tenant_id=tenant_id, job_id=job_id)
+    await db.commit()

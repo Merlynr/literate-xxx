@@ -2,6 +2,7 @@
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CachedImage from '@/components/CachedImage.vue'
+import JobDeleteButton from '@/components/JobDeleteButton.vue'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 import { useGenerationStore } from '@/stores/generation'
 import { prepareForceRefresh } from '@/utils/refresh'
@@ -76,7 +77,13 @@ function showProgress(item: { job_id: string; status: string }) {
       暂无作品
     </div>
     <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <div v-for="item in filtered" :key="item.job_id" class="page-card overflow-hidden">
+      <div v-for="item in filtered" :key="item.job_id" class="page-card group overflow-hidden">
+        <div class="relative">
+          <div
+            class="absolute right-2 top-2 z-10 opacity-100 transition-opacity duration-200 md:pointer-events-none md:opacity-0 md:group-hover:pointer-events-auto md:group-hover:opacity-100"
+          >
+            <JobDeleteButton :job-id="item.job_id" :status="item.status" />
+          </div>
         <a
           :href="item.watermarked_result_download_url || item.source_preview_url || '#'"
           target="_blank"
@@ -84,7 +91,6 @@ function showProgress(item: { job_id: string; status: string }) {
         >
           <CachedImage
             v-if="item.watermarked_result_download_url || item.source_preview_url"
-            :key="`${item.job_id}-${reloadKey}`"
             :src="item.watermarked_result_download_url || item.source_preview_url"
             :job-id="item.job_id"
             :image-role="item.watermarked_result_download_url ? 'watermark' : 'source'"
@@ -98,12 +104,15 @@ function showProgress(item: { job_id: string; status: string }) {
             生成中…
           </div>
         </a>
+        </div>
         <div class="p-3">
           <JobStatusBadge :status="item.status" />
           <template v-if="showProgress(item)">
             <el-progress
               class="mt-3"
               :percentage="gen.displayProgress(item)"
+              :indeterminate="gen.displayProgressIndeterminate(item)"
+              :show-text="gen.showProgressPercentage(item)"
               :stroke-width="8"
             />
             <p

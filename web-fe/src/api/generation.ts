@@ -60,6 +60,13 @@ export function createJob(payload: {
   })
 }
 
+export function deleteGenerationJob(jobId: string) {
+  return request<void>({
+    url: `/generation-jobs/${jobId}`,
+    method: 'DELETE',
+  })
+}
+
 export function getJob(jobId: string, options?: { force?: boolean; skipCache?: boolean }) {
   if (options?.skipCache) {
     return request<GenerationJob>({ url: `/generation-jobs/${jobId}` })

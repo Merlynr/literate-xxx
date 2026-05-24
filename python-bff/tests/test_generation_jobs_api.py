@@ -173,6 +173,22 @@ async def test_read_generation_job(client, monkeypatch):
 
     monkeypatch.setattr("app.api.v1.generation.get_generation_job", fake_get_generation_job)
     resp = await client.get("/api/v1/generation-jobs/44444444-4444-4444-4444-444444444444")
+
+
+@pytest.mark.asyncio
+async def test_delete_generation_job_endpoint(client, monkeypatch):
+    async def fake_delete_generation_job(db, *, tenant_id, job_id):
+        return None
+
+    monkeypatch.setattr(
+        "app.api.v1.generation.delete_generation_job",
+        fake_delete_generation_job,
+    )
+
+    resp = await client.delete(
+        "/api/v1/generation-jobs/44444444-4444-4444-4444-444444444444",
+    )
+    assert resp.status_code == 204
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "running"

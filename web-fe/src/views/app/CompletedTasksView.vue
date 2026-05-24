@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import CachedImage from '@/components/CachedImage.vue'
+import JobDeleteButton from '@/components/JobDeleteButton.vue'
 import { listCompletedHistory } from '@/api/generation'
 import { enrichHistoryItems } from '@/utils/jobMeta'
 import { prepareForceRefresh } from '@/utils/refresh'
@@ -34,6 +35,10 @@ function onRowClick(row: GenerationHistoryItem) {
   openDetail(row.job_id)
 }
 
+function onJobDeleted(jobId: string) {
+  items.value = items.value.filter((row) => row.job_id !== jobId)
+}
+
 onMounted(load)
 </script>
 
@@ -62,7 +67,6 @@ onMounted(load)
           <template #default="{ row }">
             <CachedImage
               v-if="row.raw_result_download_url || row.watermarked_result_download_url || row.source_preview_url"
-              :key="`${row.job_id}-${reloadKey}`"
               :src="row.raw_result_download_url || row.watermarked_result_download_url || row.source_preview_url"
               :job-id="row.job_id"
               :image-role="row.raw_result_download_url ? 'raw' : row.watermarked_result_download_url ? 'watermark' : 'source'"
@@ -83,9 +87,15 @@ onMounted(load)
             {{ new Date(row.updated_at).toLocaleString() }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row.job_id)">查看</el-button>
+            <JobDeleteButton
+              :job-id="row.job_id"
+              status="succeeded"
+              variant="text"
+              @deleted="onJobDeleted(row.job_id)"
+            />
           </template>
         </el-table-column>
       </el-table>

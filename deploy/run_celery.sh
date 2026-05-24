@@ -20,4 +20,5 @@ load_env_file "${PROJECT_DIR}/.env"
 exec "${PROJECT_DIR}/.venv/bin/python" -m celery -A app.workers.celery_app worker \
     --loglevel=info \
     --pool=solo \
-    --concurrency=1
+    --concurrency=1 \
+    --hostname="xxzx-worker@%h"

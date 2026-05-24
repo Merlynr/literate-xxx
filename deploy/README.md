@@ -155,12 +155,65 @@ export PYTHONPATH=/opt/xxzx/python-bff
 DATABASE_URL=mysql+aiomysql://用户名:密码@localhost:3306/数据库名
 ```
 
-### Q: Redis 连接失败
+### Q: Redis 连接失败 / 任务一直排队
+
+生产环境 Redis 通常开启了密码，`redis-cli ping` 会返回 `NOAUTH Authentication required`，**不代表 Redis 挂了**。
 
 ```bash
-# 检查 Redis 是否运行
-redis-cli ping
+# 1. 从 python-bff/.env 读取密码（与 CELery 使用同一配置）
+grep -E '^(REDIS_URL|CELERY_BROKER_URL)=' /opt/xxzx/python-bff/.env
 
-# 启动 Redis
-sudo systemctl start redis
+# 2. 带密码探测（把 YOUR_PASSWORD 换成 .env 里 redis://:密码@ 中的密码）
+redis-cli -a 'YOUR_PASSWORD' ping
+# 应返回 PONG
+
+# 3. 后端就绪检查（含 Redis）
+curl -s http://127.0.0.1:8000/api/v1/health/readiness | python3 -m json.tool
+
+# 4. Celery 是否连上 broker（看日志里是否有连接错误）
+tail -n 80 /var/log/xxzx/celery.log
 ```
+
+`.env` 中 URL 格式必须为（注意密码前的冒号）：
+
+```
+REDIS_URL=redis://:你的密码@127.0.0.1:6379/0
+CELERY_BROKER_URL=redis://:你的密码@127.0.0.1:6379/1
+CELERY_RESULT_BACKEND=redis://:你的密码@127.0.0.1:6379/2
+```
+
+修改 `.env` 后务必重启三个服务：
+
+```bash
+sudo systemctl restart xxzx-backend xxzx-celery xxzx-celery-beat
+```
+
+若 `readiness` 里 `redis` 不是 `ok`，Worker 即使 `active (running)` 也无法消费队列，前端会长期显示「排队中」。
+
+### Q: Beat 在跑但任务一直「排队中」/ 进度条 88%
+
+Beat 只负责**定时发 reconcile 消息**，真正执行任务的是 **Worker**（`xxzx-celery`），不是 Beat。
+
+```bash
+# 1. 看 Worker 日志（应有 generation.process / generation.reconcile）
+tail -n 100 /var/log/xxzx/celery.log
+
+# 2. 确认 Worker 已注册任务（应包含 generation.process、generation.reconcile）
+cd /opt/xxzx/python-bff   # 或你的部署目录
+source .venv/bin/activate
+export PYTHONPATH=$PWD
+python -m celery -A app.workers.celery_app inspect registered
+
+# 3. 手动 ping 测试
+python -m celery -A app.workers.celery_app inspect ping
+
+# 4. 看 broker 队列积压（默认队列名 celery）
+redis-cli -a '密码' LLEN celery
+
+# 5. 更新代码后务必重启 Worker + Beat
+sudo systemctl restart xxzx-celery xxzx-celery-beat
+```
+
+前端 **88%** 是「排队状态」的估算上限，**不是**生成快完成了；超过约 3 分钟排队会显示不确定进度条和橙色提示。
+
+卡住的老任务：删除后重新提交，或等 reconcile 自动重投（最多 3 次后标记失败）。

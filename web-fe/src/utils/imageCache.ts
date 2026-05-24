@@ -7,8 +7,11 @@ interface ImageCacheEntry {
 
 const imageStore = new Map<string, ImageCacheEntry>()
 const imageInflight = new Map<string, Promise<string>>()
+/** 失败后短暂冷却，避免轮询导致同一 key 疯狂重试 */
+const imageFailedUntil = new Map<string, number>()
 
 const DEFAULT_IMAGE_TTL_MS = 30 * 60 * 1000
+const IMAGE_FAIL_COOLDOWN_MS = 60 * 1000
 
 function isHttpUrl(url: string) {
   return url.startsWith('http://') || url.startsWith('https://')
@@ -60,21 +63,28 @@ export async function getCachedImageSrc(
   cacheKey: string,
   options?: { force?: boolean; ttlMs?: number },
 ): Promise<string> {
-  if (!url || !isHttpUrl(url)) return url
+  if (!url?.trim()) return ''
+  if (!isHttpUrl(url)) return ''
 
   const ttlMs = options?.ttlMs ?? DEFAULT_IMAGE_TTL_MS
   const key = cacheKey || url
 
   if (!options?.force) {
+    const failUntil = imageFailedUntil.get(key)
+    if (failUntil && Date.now() < failUntil) {
+      throw new Error('图片加载冷却中')
+    }
     const hit = imageStore.get(key)
     if (hit && Date.now() <= hit.expiresAt) return hit.blobUrl
     const pending = imageInflight.get(key)
     if (pending) return pending
   } else {
     invalidateImageCache(key)
+    imageFailedUntil.delete(key)
   }
 
-  const task = fetch(url, { mode: 'cors', credentials: 'omit' })
+  // 部分 OSS 未配置 CORS，fetch 会失败；组件会回退为 <img src="预签名URL">
+  const task = fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
     .then(async (res) => {
       if (!res.ok) throw new Error(`图片加载失败 (${res.status})`)
       const blob = await res.blob()
@@ -82,7 +92,12 @@ export async function getCachedImageSrc(
       const old = imageStore.get(key)
       if (old) revokeEntry(old)
       imageStore.set(key, { blobUrl, expiresAt: Date.now() + ttlMs })
+      imageFailedUntil.delete(key)
       return blobUrl
+    })
+    .catch((err) => {
+      imageFailedUntil.set(key, Date.now() + IMAGE_FAIL_COOLDOWN_MS)
+      throw err
     })
     .finally(() => {
       if (imageInflight.get(key) === task) imageInflight.delete(key)

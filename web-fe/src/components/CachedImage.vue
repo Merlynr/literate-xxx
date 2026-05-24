@@ -17,6 +17,10 @@ const props = withDefaults(
 
 const displaySrc = ref('')
 
+function isHttpUrl(url: string) {
+  return url.startsWith('http://') || url.startsWith('https://')
+}
+
 function resolveCacheKey(url: string) {
   if (props.cacheKey) return props.cacheKey
   if (props.jobId && props.imageRole) return imageCacheKey(props.jobId, props.imageRole)
@@ -33,14 +37,23 @@ async function load(force = false) {
   try {
     displaySrc.value = await getCachedImageSrc(url, key, { force })
   } catch {
-    displaySrc.value = url
+    // OSS 预签名常无 CORS；<img> 直链仍可显示，勿留空
+    displaySrc.value = isHttpUrl(url) ? url : ''
   }
 }
 
+/** 预签名 URL 每次轮询会变 query，不应因此重复拉取 */
 watch(
-  () => [props.src, props.jobId, props.imageRole, props.cacheKey, props.reloadKey] as const,
+  () =>
+    [
+      props.jobId,
+      props.imageRole,
+      props.cacheKey,
+      props.reloadKey,
+      Boolean(props.src?.trim()),
+    ] as const,
   () => {
-    void load(!!props.reloadKey)
+    void load(props.reloadKey != null && props.reloadKey > 0)
   },
   { immediate: true },
 )
@@ -51,5 +64,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <img v-if="displaySrc" :src="displaySrc" :class="imgClass" :alt="alt" />
+  <img
+    v-if="displaySrc"
+    :src="displaySrc"
+    :class="imgClass"
+    :alt="alt"
+    referrerpolicy="no-referrer"
+    loading="lazy"
+  />
 </template>

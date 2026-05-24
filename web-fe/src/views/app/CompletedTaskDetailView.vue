@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getJob } from '@/api/generation'
 import CachedImage from '@/components/CachedImage.vue'
+import JobDeleteButton from '@/components/JobDeleteButton.vue'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 import type { GenerationJob } from '@/types'
 
@@ -63,10 +64,19 @@ onMounted(async () => {
     <el-alert v-else-if="error" :title="error" type="error" show-icon class="mb-4" />
 
     <template v-else-if="job">
-      <header class="mb-6 flex flex-wrap items-center gap-3">
-        <h1 class="text-2xl font-bold">任务详情</h1>
-        <JobStatusBadge :status="job.status" />
-        <span class="text-xs text-brand-900/50">{{ job.job_id }}</span>
+      <header class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <h1 class="text-2xl font-bold">任务详情</h1>
+          <JobStatusBadge :status="job.status" />
+          <span class="text-xs text-brand-900/50">{{ job.job_id }}</span>
+        </div>
+        <JobDeleteButton
+          v-if="job.status === 'succeeded'"
+          :job-id="job.job_id"
+          :status="job.status"
+          variant="text"
+          @deleted="router.push('/app/works/completed')"
+        />
       </header>
 
       <div class="grid gap-6 lg:grid-cols-2">

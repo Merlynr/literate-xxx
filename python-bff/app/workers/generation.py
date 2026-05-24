@@ -17,8 +17,10 @@ from app.services.oss import generate_presigned_download_url
 from app.services.generation_results import persist_generation_result_assets
 from app.services.generation_snapshot import freeze_generation_job_context
 from app.services.prompt_assembler import assemble_generation_prompt, build_image_role_preamble
+from app.services.quota_service import release_quota
 from app.services.vision_analysis import analyze_generation_vision
 from app.services.watermark import apply_watermark
+from fastapi import HTTPException
 
 
 async def _load_job(db, job_id: uuid.UUID) -> GenerationJob:
@@ -239,3 +241,54 @@ async def run_generation_job(job_id: uuid.UUID | str) -> dict[str, Any]:
 def run_generation_job_sync(job_id: str) -> dict[str, Any]:
     target_id = uuid.UUID(str(job_id))
     return run_celery_async(lambda db: _run_generation_job(db, target_id))
+
+
+async def _mark_job_failed_if_active(
+    db,
+    job_id: uuid.UUID,
+    *,
+    error_code: str,
+    error_message: str,
+) -> None:
+    job = await db.scalar(select(GenerationJob).where(GenerationJob.id == job_id))
+    if not job or job.status not in ("queued", "running"):
+        return
+    job.status = "failed"
+    job.error_code = error_code
+    job.error_message = error_message[:1024]
+    job.finished_at = datetime.now(timezone.utc)
+    try:
+        await release_quota(
+            db,
+            tenant_id=job.tenant_id,
+            job_id=job.id,
+            units=1,
+            reason="generation.job.worker_failed",
+        )
+    except HTTPException:
+        pass
+    await record_job_event(
+        db,
+        tenant_id=job.tenant_id,
+        job_id=job.id,
+        event_type="job.failed",
+        message="Generation job failed in worker",
+        payload={"error_code": error_code, "error_message": error_message},
+    )
+    await db.flush()
+    await db.commit()
+
+
+def mark_generation_job_failed_sync(job_id: str) -> None:
+    target_id = uuid.UUID(str(job_id))
+    try:
+        run_celery_async(
+            lambda db: _mark_job_failed_if_active(
+                db,
+                target_id,
+                error_code="WorkerTaskError",
+                error_message="Generation worker failed before completing the job",
+            )
+        )
+    except Exception:
+        pass

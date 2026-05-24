@@ -23,6 +23,8 @@ celery_app.conf.update(
     task_max_retries=3,
     broker_transport_options={"visibility_timeout": 3600},
     worker_prefetch_multiplier=1,
+    # 显式注册任务模块，避免 autodiscover 未加载导致 Worker 不消费队列
+    imports=("app.workers.tasks",),
     beat_schedule={
         "generation-reconcile-stale-jobs": {
             "task": "generation.reconcile",
@@ -32,3 +34,6 @@ celery_app.conf.update(
 )
 
 celery_app.autodiscover_tasks(["app.workers"])
+
+# 双保险：import 时即注册 generation.process / generation.reconcile
+import app.workers.tasks  # noqa: E402, F401

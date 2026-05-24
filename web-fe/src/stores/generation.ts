@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   buildRequestId,
   createJob,
+  deleteGenerationJob,
   getJob,
   listCategories,
   listHistory,
@@ -10,9 +11,11 @@ import {
   MAX_SOURCE_ASSETS,
   uploadSourceAsset,
 } from '@/api/generation'
+import { jobCacheKey } from '@/api/cacheConfig'
 import { acceptPrivacy } from '@/api/privacy'
 import { estimateQuota } from '@/api/quota'
-import { invalidateAfterNewGeneration } from '@/utils/imageCache'
+import { invalidateAfterNewGeneration, invalidateImagesForJob } from '@/utils/imageCache'
+import { cacheDelete, cacheDeletePrefix } from '@/utils/memoryCache'
 import type { Category, GenerationAsset, GenerationHistoryItem, GenerationJob, Style } from '@/types'
 import { useUserStore } from './user'
 
@@ -34,6 +37,17 @@ function wait(ms: number) {
 
 export function isActiveJobStatus(status: string) {
   return status === 'queued' || status === 'running'
+}
+
+/** 进度条上限：排队中不显示 99%，避免「假完成」 */
+export function progressCapForStatus(status: string): number {
+  if (status === 'queued') return 88
+  if (status === 'running') return 98
+  return 100
+}
+
+function capProgressByStatus(status: string, value: number): number {
+  return Math.min(value, progressCapForStatus(status))
 }
 
 export const useGenerationStore = defineStore('generation', () => {
@@ -108,10 +122,17 @@ export const useGenerationStore = defineStore('generation', () => {
     persistJobTracks()
   }
 
-  /** 进度只增不减，避免刷新/重连轮询时条突然回退 */
-  function bumpJobTrack(jobId: string, progress: number, statusMessage: string) {
+  /** 进度只增不减，并按任务状态封顶，避免排队中显示 99% */
+  function bumpJobTrack(
+    jobId: string,
+    progress: number,
+    statusMessage: string,
+    status?: string,
+  ) {
     const prev = jobTracks.value[jobId]?.progress ?? 0
-    setJobTrack(jobId, Math.max(prev, progress), statusMessage)
+    let next = Math.max(prev, progress)
+    if (status) next = capProgressByStatus(status, next)
+    setJobTrack(jobId, next, statusMessage)
   }
 
   function statusMessageForJob(status: string) {
@@ -132,20 +153,40 @@ export const useGenerationStore = defineStore('generation', () => {
     const refMs = new Date(item.updated_at || item.created_at).getTime()
     if (Number.isNaN(refMs)) return 20
     const minutes = Math.max(0, (Date.now() - refMs) / 60_000)
-    if (item.status === 'running') return Math.min(95, 45 + Math.floor(minutes * 4))
-    if (item.status === 'queued') return Math.min(92, 18 + Math.floor(minutes * 6))
+    if (item.status === 'running') {
+      return capProgressByStatus('running', Math.min(95, 45 + Math.floor(minutes * 4)))
+    }
+    if (item.status === 'queued') {
+      return capProgressByStatus('queued', Math.min(85, 18 + Math.floor(minutes * 4)))
+    }
     return 15
   }
 
   function displayProgress(item: GenerationHistoryItem): number {
     const track = jobTracks.value[item.job_id]
     const estimated = estimateProgressForItem(item)
-    if (track) return Math.max(track.progress, estimated)
-    return estimated
+    const raw = track ? Math.max(track.progress, estimated) : estimated
+    return capProgressByStatus(item.status, raw)
+  }
+
+  /** 长时间排队：用不确定进度条，不展示「88% 像快完成」 */
+  function displayProgressIndeterminate(item: GenerationHistoryItem): boolean {
+    return item.status === 'queued' && isStuckQueued(item)
+  }
+
+  /** 排队中不显示百分比数字（88% 仅为估算上限，易误解） */
+  function showProgressPercentage(item: GenerationHistoryItem): boolean {
+    return item.status === 'running' || !isStuckQueued(item)
   }
 
   function queuedWaitMs(item: GenerationHistoryItem): number {
     const refMs = new Date(item.updated_at || item.created_at).getTime()
+    if (Number.isNaN(refMs)) return 0
+    return Math.max(0, Date.now() - refMs)
+  }
+
+  function queuedWaitMsFromJob(job: GenerationJob): number {
+    const refMs = new Date(job.updated_at || job.created_at).getTime()
     if (Number.isNaN(refMs)) return 0
     return Math.max(0, Date.now() - refMs)
   }
@@ -260,7 +301,12 @@ export const useGenerationStore = defineStore('generation', () => {
           mergeJobIntoHistory(latest)
           const track = jobTracks.value[item.job_id]
           if (track) {
-            bumpJobTrack(item.job_id, track.progress, statusMessageForJob(latest.status))
+            bumpJobTrack(
+              item.job_id,
+              track.progress,
+              statusMessageForJob(latest.status),
+              latest.status,
+            )
           }
         } catch {
           /* ignore */
@@ -388,9 +434,10 @@ export const useGenerationStore = defineStore('generation', () => {
           jobId,
           jobTracks.value[jobId]?.progress ?? 15,
           statusMessageForJob(latest.status),
+          latest.status,
         )
       } else {
-        bumpJobTrack(jobId, 20, statusMessageForJob(latest.status))
+        bumpJobTrack(jobId, 20, statusMessageForJob(latest.status), latest.status)
       }
 
       let attempts = 0
@@ -401,12 +448,21 @@ export const useGenerationStore = defineStore('generation', () => {
             jobId,
             Math.min(95, 25 + attempts * 2),
             statusMessageForJob(latest.status),
+            latest.status,
           )
         } else {
-          const cur = jobTracks.value[jobId]?.progress ?? 15
-          bumpJobTrack(jobId, Math.min(99, cur + 1), statusMessageForJob(latest.status))
+          bumpJobTrack(
+            jobId,
+            jobTracks.value[jobId]?.progress ?? 15,
+            statusMessageForJob(latest.status),
+            latest.status,
+          )
         }
-        await wait(2000)
+        const pollMs =
+          latest.status === 'queued' && queuedWaitMsFromJob(latest) >= QUEUED_STALE_MS
+            ? 8000
+            : 3000
+        await wait(pollMs)
         if (!isJobPollActive(jobId, token)) return latest
         latest = await getJob(jobId, { skipCache: true })
         mergeJobIntoHistory(latest)
@@ -415,7 +471,12 @@ export const useGenerationStore = defineStore('generation', () => {
 
       if (isActiveJobStatus(latest.status)) {
         if (!isJobPollActive(jobId, token)) return latest
-        bumpJobTrack(jobId, Math.max(jobTracks.value[jobId]?.progress ?? 80, 80), '任务仍在处理中，系统会自动重试排队…')
+        bumpJobTrack(
+          jobId,
+          Math.max(jobTracks.value[jobId]?.progress ?? 80, 80),
+          '任务仍在处理中，系统会自动重试排队…',
+          latest.status,
+        )
         let extraAttempts = 0
         while (extraAttempts < 30 && isActiveJobStatus(latest.status)) {
           if (!isJobPollActive(jobId, token)) return latest
@@ -423,13 +484,24 @@ export const useGenerationStore = defineStore('generation', () => {
             latest.status === 'running'
               ? 'AI 正在生成中，请稍候…'
               : '仍在排队，系统会自动重试…'
-          if (resume) {
-            const cur = jobTracks.value[jobId]?.progress ?? 82
-            bumpJobTrack(jobId, Math.min(99, Math.max(cur, 82 + extraAttempts)), statusMsg)
+          if (!resume) {
+            bumpJobTrack(
+              jobId,
+              Math.min(progressCapForStatus(latest.status), 82 + extraAttempts),
+              statusMsg,
+              latest.status,
+            )
           } else {
-            bumpJobTrack(jobId, Math.min(98, 82 + extraAttempts), statusMsg)
+            bumpJobTrack(
+              jobId,
+              jobTracks.value[jobId]?.progress ?? 82,
+              statusMsg,
+              latest.status,
+            )
           }
-          await wait(3000)
+          const extraPollMs =
+            latest.status === 'queued' ? 10000 : 5000
+          await wait(extraPollMs)
           if (!isJobPollActive(jobId, token)) return latest
           latest = await getJob(jobId, { skipCache: true })
           mergeJobIntoHistory(latest)
@@ -451,7 +523,12 @@ export const useGenerationStore = defineStore('generation', () => {
         await loadHistory({ force: true, keepPolling: true })
         window.setTimeout(() => clearJobTrack(jobId), 8000)
       } else {
-        bumpJobTrack(jobId, Math.max(jobTracks.value[jobId]?.progress ?? 98, 98), '任务仍在处理中，可刷新列表查看')
+        bumpJobTrack(
+          jobId,
+          capProgressByStatus(latest.status, jobTracks.value[jobId]?.progress ?? 88),
+          '任务仍在处理中，可刷新列表查看',
+          latest.status,
+        )
         await loadHistory({ force: true, keepPolling: true })
       }
 
@@ -459,6 +536,22 @@ export const useGenerationStore = defineStore('generation', () => {
     } finally {
       jobPollInFlight.delete(jobId)
     }
+  }
+
+  function abortJobPolling(jobId: string) {
+    jobPollTokens.set(jobId, (jobPollTokens.get(jobId) ?? 0) + 1)
+    jobPollInFlight.delete(jobId)
+  }
+
+  async function deleteJob(jobId: string) {
+    await deleteGenerationJob(jobId)
+    abortJobPolling(jobId)
+    clearJobTrack(jobId)
+    historyItems.value = historyItems.value.filter((item) => item.job_id !== jobId)
+    cacheDelete(jobCacheKey(jobId))
+    cacheDeletePrefix('history:')
+    cacheDeletePrefix('quota:')
+    invalidateImagesForJob(jobId)
   }
 
   async function startGeneration() {
@@ -522,6 +615,8 @@ export const useGenerationStore = defineStore('generation', () => {
     maxSourceAssets: MAX_SOURCE_ASSETS,
     getJobTrack,
     displayProgress,
+    displayProgressIndeterminate,
+    showProgressPercentage,
     displayProgressMessage,
     isStuckQueued,
     isCriticalQueued,
@@ -537,5 +632,6 @@ export const useGenerationStore = defineStore('generation', () => {
     acceptPrivacyAgreement,
     startGeneration,
     startJobPolling,
+    deleteJob,
   }
 })

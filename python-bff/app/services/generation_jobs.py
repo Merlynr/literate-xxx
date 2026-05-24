@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -17,7 +17,7 @@ from app.models.generation_job_event import GenerationJobEvent
 from app.models.promo_rule import PromoRule
 from app.models.style import Style
 from app.services.privacy_service import has_generation_privacy_agreement
-from app.services.quota_service import freeze_quota
+from app.services.quota_service import freeze_quota, release_quota, release_quota
 from app.services.oss import generate_presigned_download_url
 from app.workers.celery_app import celery_app
 
@@ -401,6 +401,51 @@ async def get_generation_job(
             GenerationJob.id == job_id,
         )
     )
+
+
+_DELETABLE_JOB_STATUSES = frozenset({"queued", "failed", "succeeded"})
+
+
+async def delete_generation_job(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    job_id: uuid.UUID,
+) -> None:
+    job = await get_generation_job(db, tenant_id=tenant_id, job_id=job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
+    if job.status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="任务正在生成中，请稍后再删除",
+        )
+    if job.status not in _DELETABLE_JOB_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"当前状态无法删除: {job.status}",
+        )
+
+    if job.status in ("queued", "failed", "succeeded"):
+        try:
+            await release_quota(
+                db,
+                tenant_id=tenant_id,
+                job_id=job.id,
+                units=1,
+                reason="generation.job.deleted",
+            )
+        except HTTPException:
+            pass
+
+    await db.execute(
+        delete(GenerationJobEvent).where(
+            GenerationJobEvent.job_id == job.id,
+            GenerationJobEvent.tenant_id == tenant_id,
+        )
+    )
+    await db.delete(job)
+    await db.flush()
 
 
 def generation_asset_download_url(asset: GenerationAsset) -> str:
