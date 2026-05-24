@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-cream-50: #fbf7ef;
+  --color-brand-900: #10291b;
+  --color-brand-700: #1f5d3a;
+  --color-brand-500: #2d7d4d;
+  --color-gold-600: #b98b2a;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--color-brand-900);
+  background: var(--color-cream-50);
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+.page-card {
+  @apply rounded-2xl border border-brand-700/10 bg-white/90 shadow-sm;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-brand-700 to-brand-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.eyebrow {
+  @apply text-xs font-semibold uppercase tracking-widest text-gold-600;
+}
