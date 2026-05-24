@@ -38,6 +38,7 @@ for script in \
   "${DEPLOY_DIR}/run_celery.sh" \
   "${DEPLOY_DIR}/run_celery_beat.sh" \
   "${DEPLOY_DIR}/check_celery.sh" \
+  "${DEPLOY_DIR}/re-web.sh" \
   "${DEPLOY_DIR}/install_systemd.sh" \
   "${DEPLOY_DIR}/lib/env.sh"; do
   if [[ -f "${script}" ]]; then

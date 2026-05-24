@@ -120,8 +120,18 @@ cp .env.example .env.production
 # 若 Nginx 把 /api 反代到本机 8000，可写：
 # VITE_API_BASE_URL=/api/v1
 
+npm install          # 必须安装 devDependencies（含 vue-tsc）
 npm run build
 # 产物在 web-fe/dist/
+
+服务器上一键发布（会先 npm install）：
+
+```bash
+sudo bash /root/literate-xxx/deploy/re-web.sh
+```
+
+若服务器上 `vue-tsc: command not found`，说明未执行 `npm install` 或用了 `npm install --omit=dev`。
+也可在已安装依赖后使用跳过类型检查的构建：`npm run build:deploy`。
 ```
 
 ### 6.2 上传到服务器
