@@ -2,21 +2,22 @@
 # Celery 启动包装脚本 - 用于 systemd
 set -euo pipefail
 
-PROJECT_DIR="/opt/xxzx/python-bff"
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${DEPLOY_DIR}/../python-bff"
+# shellcheck disable=SC1091
+source "${DEPLOY_DIR}/lib/env.sh"
+
 cd "${PROJECT_DIR}"
 
-# 激活虚拟环境
-source .venv/bin/activate
+if [[ ! -x "${PROJECT_DIR}/.venv/bin/python" ]]; then
+    echo "Missing virtualenv python: ${PROJECT_DIR}/.venv/bin/python" >&2
+    exit 127
+fi
 
-# 设置 PYTHONPATH
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+load_env_file "${PROJECT_DIR}/.env"
 
-# 加载环境变量
-set -a
-source .env
-set +a
-
-exec python -m celery -A app.workers.celery_app worker \
+exec "${PROJECT_DIR}/.venv/bin/python" -m celery -A app.workers.celery_app worker \
     --loglevel=info \
     --pool=solo \
     --concurrency=1

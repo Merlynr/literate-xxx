@@ -472,7 +472,7 @@ status_all() {
 
 # ---------- 看门狗 ----------
 
-HEALTH_URL="http://127.0.0.1:${PORT}/api/v1/health"
+HEALTH_URL="http://127.0.0.1:${PORT}/api/v1/health/liveness"
 HEALTH_TIMEOUT=5
 
 watchdog() {

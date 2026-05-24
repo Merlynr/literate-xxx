@@ -14,11 +14,5 @@ RestartSec=5
 StandardOutput=append:/var/log/xxzx/celery.log
 StandardError=append:/var/log/xxzx/celery.log
 
-EnvironmentFile=/opt/xxzx/python-bff/.env
-
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/var/log/xxzx /var/run/xxzx /tmp
-
 [Install]
 WantedBy=multi-user.target

@@ -15,6 +15,12 @@ async def liveness():
     return {"status": "ok"}
 
 
+@router.get("/health")
+async def health_alias():
+    """Backward-compatible alias for deploy scripts and external probes."""
+    return {"status": "ok"}
+
+
 @router.get("/health/readiness", response_model=HealthCheck)
 async def readiness(db: AsyncSession = Depends(get_db)):
     checks: dict[str, str] = {}
