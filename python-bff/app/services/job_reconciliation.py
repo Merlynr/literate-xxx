@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -9,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.celery_async import run_celery_async
 from app.core.database import async_session_factory
 from app.models.generation_job import GenerationJob
 from app.models.generation_job_event import GenerationJobEvent
@@ -211,4 +211,4 @@ async def recover_stale_jobs_session(*, trigger: str) -> dict[str, Any]:
 
 
 def recover_stale_jobs_sync(*, trigger: str) -> dict[str, Any]:
-    return asyncio.run(recover_stale_jobs_session(trigger=trigger))
+    return run_celery_async(lambda db: recover_stale_jobs(db, trigger=trigger))

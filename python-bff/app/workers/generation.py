@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 import uuid
 from typing import Any
@@ -8,6 +7,7 @@ from typing import Any
 import httpx
 from sqlalchemy import select
 
+from app.core.celery_async import run_celery_async
 from app.core.database import async_session_factory
 from app.models.generation_asset import GenerationAsset
 from app.models.generation_job import GenerationJob
@@ -237,4 +237,5 @@ async def run_generation_job(job_id: uuid.UUID | str) -> dict[str, Any]:
 
 
 def run_generation_job_sync(job_id: str) -> dict[str, Any]:
-    return asyncio.run(run_generation_job(job_id))
+    target_id = uuid.UUID(str(job_id))
+    return run_celery_async(lambda db: _run_generation_job(db, target_id))

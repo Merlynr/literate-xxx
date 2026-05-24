@@ -16,10 +16,19 @@ import { invalidateAfterNewGeneration } from '@/utils/imageCache'
 import type { Category, GenerationAsset, GenerationHistoryItem, GenerationJob, Style } from '@/types'
 import { useUserStore } from './user'
 
-type Stage = 'idle' | 'ready' | 'generating' | 'succeeded' | 'failed'
+type Stage = 'idle' | 'ready'
+
+export interface JobTrack {
+  progress: number
+  statusMessage: string
+}
 
 function wait(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+export function isActiveJobStatus(status: string) {
+  return status === 'queued' || status === 'running'
 }
 
 export const useGenerationStore = defineStore('generation', () => {
@@ -34,14 +43,16 @@ export const useGenerationStore = defineStore('generation', () => {
 
   const sourceAssets = ref<GenerationAsset[]>([])
   const activeSourcePreviewIndex = ref(0)
-  const currentJob = ref<GenerationJob | null>(null)
   const historyItems = ref<GenerationHistoryItem[]>([])
+  const jobTracks = ref<Record<string, JobTrack>>({})
   const stage = ref<Stage>('idle')
   const busy = ref(false)
   const errorMessage = ref('')
   const statusMessage = ref('先上传商品实拍图')
-  const progress = ref(0)
   const estimatedUnits = ref<number | null>(null)
+
+  const jobPollTokens = new Map<string, number>()
+  const jobPollInFlight = new Set<string>()
 
   const sourcePreviewUrls = computed(() => sourceAssets.value.map((asset) => asset.download_url))
   const sourcePreviewUrl = computed(
@@ -57,34 +68,114 @@ export const useGenerationStore = defineStore('generation', () => {
       userStore.hasPrivacyAgreement,
   )
 
-  const hasResult = computed(() => !!currentJob.value?.watermarked_result_download_url)
+  function getJobTrack(jobId: string): JobTrack | undefined {
+    return jobTracks.value[jobId]
+  }
 
-  const isGenerationFinished = computed(
-    () => stage.value === 'succeeded' || stage.value === 'failed',
-  )
+  function isJobPollActive(jobId: string, token: number) {
+    return jobPollTokens.get(jobId) === token
+  }
 
-  function resetForNewTask() {
-    if (busy.value && stage.value === 'generating') {
-      return false
+  function setJobTrack(jobId: string, progress: number, statusMessage: string) {
+    jobTracks.value = {
+      ...jobTracks.value,
+      [jobId]: { progress, statusMessage },
     }
+  }
+
+  /** 进度只增不减，避免刷新/重连轮询时条突然回退 */
+  function bumpJobTrack(jobId: string, progress: number, statusMessage: string) {
+    const prev = jobTracks.value[jobId]?.progress ?? 0
+    setJobTrack(jobId, Math.max(prev, progress), statusMessage)
+  }
+
+  function statusMessageForJob(status: string) {
+    if (status === 'running') return 'AI 正在生成中…'
+    if (status === 'queued') return '任务排队中…'
+    return '处理中…'
+  }
+
+  function clearJobTrack(jobId: string) {
+    const next = { ...jobTracks.value }
+    delete next[jobId]
+    jobTracks.value = next
+  }
+
+  function jobToHistoryRow(
+    job: GenerationJob,
+    extras?: Partial<GenerationHistoryItem>,
+  ): GenerationHistoryItem {
+    return {
+      job_id: job.job_id,
+      status: job.status,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      error_message: job.error_message || '',
+      source_preview_url:
+        extras?.source_preview_url ?? job.source_preview_url ?? null,
+      raw_result_download_url: job.raw_result_download_url ?? null,
+      watermarked_result_download_url: job.watermarked_result_download_url ?? null,
+      category_name: extras?.category_name,
+      style_name: extras?.style_name,
+      prompt_hint: extras?.prompt_hint,
+    }
+  }
+
+  function upsertHistoryItem(job: GenerationJob, extras?: Partial<GenerationHistoryItem>) {
+    const row = jobToHistoryRow(job, extras)
+    const idx = historyItems.value.findIndex((i) => i.job_id === job.job_id)
+    if (idx >= 0) {
+      historyItems.value[idx] = { ...historyItems.value[idx], ...row }
+    } else {
+      historyItems.value.unshift(row)
+    }
+  }
+
+  function mergeJobIntoHistory(job: GenerationJob) {
+    upsertHistoryItem(job)
+  }
+
+  function resetGenerateForm() {
     sourceAssets.value = []
     activeSourcePreviewIndex.value = 0
-    currentJob.value = null
     stage.value = 'idle'
     errorMessage.value = ''
     statusMessage.value = '先上传商品实拍图'
-    progress.value = 0
     estimatedUnits.value = null
     productName.value = ''
     promptHint.value = ''
     outputType.value = 'scene'
-    return true
   }
 
   function prepareGeneratePage() {
-    if (isGenerationFinished.value) {
-      resetForNewTask()
+    resetGenerateForm()
+  }
+
+  function syncActiveJobPolling() {
+    for (const item of historyItems.value) {
+      if (isActiveJobStatus(item.status) && !jobPollInFlight.has(item.job_id)) {
+        startJobPolling(item.job_id)
+      }
     }
+  }
+
+  /** 刷新列表时同步进行中任务状态，不重启轮询、不回退进度 */
+  async function resyncActiveJobsFromApi() {
+    const active = historyItems.value.filter((i) => isActiveJobStatus(i.status))
+    await Promise.all(
+      active.map(async (item) => {
+        try {
+          const latest = await getJob(item.job_id, { skipCache: true })
+          mergeJobIntoHistory(latest)
+          const track = jobTracks.value[item.job_id]
+          if (track) {
+            bumpJobTrack(item.job_id, track.progress, statusMessageForJob(latest.status))
+          }
+        } catch {
+          /* ignore */
+        }
+      }),
+    )
   }
 
   async function loadCatalogs(options?: { force?: boolean }) {
@@ -98,8 +189,12 @@ export const useGenerationStore = defineStore('generation', () => {
     if (!selectedStyleId.value && stys[0]) selectedStyleId.value = stys[0].id
   }
 
-  async function loadHistory(options?: { force?: boolean }) {
+  async function loadHistory(options?: { force?: boolean; keepPolling?: boolean }) {
     historyItems.value = await listHistory(0, 50, undefined, options)
+    if (options?.keepPolling) {
+      await resyncActiveJobsFromApi()
+    }
+    syncActiveJobPolling()
   }
 
   async function refreshEstimate() {
@@ -166,51 +261,99 @@ export const useGenerationStore = defineStore('generation', () => {
     userStore.privacyAcceptedAt = res.privacy_accepted_at
   }
 
-  async function pollJob(jobId: string) {
-    let latest = await getJob(jobId, { skipCache: true })
-    let attempts = 0
-    while (attempts < 40 && latest.status !== 'succeeded' && latest.status !== 'failed') {
-      progress.value = Math.min(95, 30 + attempts * 2)
-      statusMessage.value = latest.status === 'running' ? 'AI 正在生成中…' : '任务排队中…'
-      await wait(2000)
-      latest = await getJob(jobId, { skipCache: true })
-      attempts += 1
-    }
+  function startJobPolling(jobId: string) {
+    if (jobPollInFlight.has(jobId)) return
 
-    if (latest.status !== 'succeeded' && latest.status !== 'failed') {
-      statusMessage.value = '任务仍在处理中，系统已自动重试排队，继续等待…'
-      let extraAttempts = 0
-      while (
-        extraAttempts < 30 &&
-        latest.status !== 'succeeded' &&
-        latest.status !== 'failed'
-      ) {
-        progress.value = Math.min(98, 80 + extraAttempts)
-        statusMessage.value =
-          latest.status === 'running'
-            ? 'AI 正在生成中，请稍候…'
-            : '仍在排队，系统会自动重试…'
-        await wait(3000)
+    const token = (jobPollTokens.get(jobId) ?? 0) + 1
+    jobPollTokens.set(jobId, token)
+    if (!jobTracks.value[jobId]) {
+      setJobTrack(jobId, 12, '任务已提交，等待处理…')
+    }
+    jobPollInFlight.add(jobId)
+    void runJobPoll(jobId, token)
+  }
+
+  async function runJobPoll(jobId: string, token: number) {
+    try {
+      let latest = await getJob(jobId, { skipCache: true })
+      if (!isJobPollActive(jobId, token)) return latest
+
+      mergeJobIntoHistory(latest)
+      bumpJobTrack(jobId, 20, statusMessageForJob(latest.status))
+
+      let attempts = 0
+      while (attempts < 40 && isActiveJobStatus(latest.status)) {
+        if (!isJobPollActive(jobId, token)) return latest
+        bumpJobTrack(
+          jobId,
+          Math.min(95, 25 + attempts * 2),
+          statusMessageForJob(latest.status),
+        )
+        await wait(2000)
+        if (!isJobPollActive(jobId, token)) return latest
         latest = await getJob(jobId, { skipCache: true })
-        extraAttempts += 1
+        mergeJobIntoHistory(latest)
+        attempts += 1
       }
-    }
 
-    if (latest.status !== 'succeeded' && latest.status !== 'failed') {
-      statusMessage.value = '任务仍在处理中，可稍后在「我的作品」查看结果'
+      if (isActiveJobStatus(latest.status)) {
+        if (!isJobPollActive(jobId, token)) return latest
+        bumpJobTrack(jobId, 80, '任务仍在处理中，系统会自动重试排队…')
+        let extraAttempts = 0
+        while (extraAttempts < 30 && isActiveJobStatus(latest.status)) {
+          if (!isJobPollActive(jobId, token)) return latest
+          bumpJobTrack(
+            jobId,
+            Math.min(98, 82 + extraAttempts),
+            latest.status === 'running'
+              ? 'AI 正在生成中，请稍候…'
+              : '仍在排队，系统会自动重试…',
+          )
+          await wait(3000)
+          if (!isJobPollActive(jobId, token)) return latest
+          latest = await getJob(jobId, { skipCache: true })
+          mergeJobIntoHistory(latest)
+          extraAttempts += 1
+        }
+      }
+
+      if (!isJobPollActive(jobId, token)) return latest
+
+      mergeJobIntoHistory(latest)
+
+      if (latest.status === 'succeeded') {
+        setJobTrack(jobId, 100, '生成完成')
+        invalidateAfterNewGeneration()
+        await loadHistory({ force: true })
+        window.setTimeout(() => clearJobTrack(jobId), 4000)
+      } else if (latest.status === 'failed') {
+        setJobTrack(jobId, 100, latest.error_message || '生成失败')
+        await loadHistory({ force: true })
+        window.setTimeout(() => clearJobTrack(jobId), 8000)
+      } else {
+        bumpJobTrack(jobId, 98, '任务仍在处理中，可刷新列表查看')
+        await loadHistory({ force: true })
+      }
+
+      return latest
+    } finally {
+      jobPollInFlight.delete(jobId)
     }
-    return latest
   }
 
   async function startGeneration() {
     if (!sourceAssets.value.length) throw new Error('请先上传商品照片')
     if (!userStore.hasPrivacyAgreement) throw new Error('请先同意隐私协议')
+
+    const previewUrl = sourcePreviewUrl.value
+    const categoryName =
+      categories.value.find((c) => c.id === selectedCategoryId.value)?.name ?? ''
+    const styleName = styles.value.find((s) => s.id === selectedStyleId.value)?.name ?? ''
+    const hint = [productName.value, promptHint.value].filter(Boolean).join('；')
+
     busy.value = true
-    stage.value = 'generating'
     errorMessage.value = ''
-    progress.value = 15
     try {
-      const hint = [productName.value, promptHint.value].filter(Boolean).join('；')
       const job = await createJob({
         client_request_id: buildRequestId(),
         source_asset_ids: sourceAssets.value.map((asset) => asset.asset_id),
@@ -218,26 +361,17 @@ export const useGenerationStore = defineStore('generation', () => {
         style_id: selectedStyleId.value,
         prompt_hint: hint,
       })
-      currentJob.value = job
-      progress.value = 35
-      const latest = await pollJob(job.job_id)
-      currentJob.value = latest
-      if (latest.status === 'succeeded') {
-        stage.value = 'succeeded'
-        progress.value = 100
-        statusMessage.value = '生成完成'
-        invalidateAfterNewGeneration()
-      } else if (latest.status === 'failed') {
-        stage.value = 'failed'
-        errorMessage.value = latest.error_message || '生成失败'
-      } else {
-        stage.value = 'generating'
-        progress.value = Math.min(progress.value, 98)
-      }
-      await loadHistory({ force: true })
-      return latest
+
+      upsertHistoryItem(job, {
+        source_preview_url: previewUrl || job.source_preview_url,
+        category_name: categoryName,
+        style_name: styleName,
+        prompt_hint: hint,
+      })
+      startJobPolling(job.job_id)
+      resetGenerateForm()
+      return job
     } catch (e) {
-      stage.value = 'failed'
       errorMessage.value = e instanceof Error ? e.message : '生成失败'
       throw e
     } finally {
@@ -257,19 +391,18 @@ export const useGenerationStore = defineStore('generation', () => {
     sourcePreviewUrl,
     sourcePreviewUrls,
     activeSourcePreviewIndex,
-    currentJob,
     historyItems,
+    jobTracks,
     stage,
     busy,
     errorMessage,
     statusMessage,
-    progress,
     estimatedUnits,
     canGenerate,
-    hasResult,
-    isGenerationFinished,
     maxSourceAssets: MAX_SOURCE_ASSETS,
-    resetForNewTask,
+    getJobTrack,
+    isActiveJobStatus,
+    resetGenerateForm,
     prepareGeneratePage,
     loadCatalogs,
     loadHistory,
@@ -278,5 +411,6 @@ export const useGenerationStore = defineStore('generation', () => {
     removeSourceAsset,
     acceptPrivacyAgreement,
     startGeneration,
+    startJobPolling,
   }
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CachedImage from '@/components/CachedImage.vue'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
@@ -15,30 +15,55 @@ const loading = ref(false)
 const reloadKey = ref(0)
 
 const activeTab = computed(() => props.tab || (route.path.includes('tasks') ? 'tasks' : 'gallery'))
-
-async function refresh() {
-  loading.value = true
-  prepareForceRefresh()
-  reloadKey.value += 1
-  await gen.loadHistory({ force: true })
-  loading.value = false
-}
-
-onMounted(refresh)
+const isTasksTab = computed(() => activeTab.value === 'tasks')
 
 const filtered = computed(() => {
   if (!statusFilter.value) return gen.historyItems
   return gen.historyItems.filter((i) => i.status === statusFilter.value)
 })
+
+async function refresh() {
+  loading.value = true
+  prepareForceRefresh()
+  reloadKey.value += 1
+  await gen.loadHistory({ force: true, keepPolling: true })
+  loading.value = false
+}
+
+onMounted(refresh)
+onActivated(() => {
+  if (isTasksTab.value) {
+    void gen.loadHistory()
+  }
+})
+
+function trackFor(jobId: string) {
+  return gen.getJobTrack(jobId)
+}
+
+function showProgress(item: { job_id: string; status: string }) {
+  return isTasksTab.value && gen.isActiveJobStatus(item.status)
+}
+
+function progressPercent(jobId: string) {
+  return trackFor(jobId)?.progress ?? 15
+}
+
+function progressMessage(jobId: string) {
+  return trackFor(jobId)?.statusMessage ?? '处理中…'
+}
 </script>
 
 <template>
   <div class="mx-auto max-w-6xl">
     <header class="mb-6">
-      <p class="eyebrow">{{ activeTab === 'tasks' ? 'GENERATION QUEUE' : 'FINISHED ASSETS' }}</p>
-      <h1 class="text-2xl font-bold">{{ activeTab === 'tasks' ? '生成任务' : '成品图库' }}</h1>
-      <p v-if="activeTab === 'gallery'" class="mt-1 text-sm text-brand-900/60">
+      <p class="eyebrow">{{ isTasksTab ? 'GENERATION QUEUE' : 'FINISHED ASSETS' }}</p>
+      <h1 class="text-2xl font-bold">{{ isTasksTab ? '生成任务' : '成品图库' }}</h1>
+      <p v-if="!isTasksTab" class="mt-1 text-sm text-brand-900/60">
         建议按商品系列下载后上传至淘宝、抖店和小红书素材库
+      </p>
+      <p v-else class="mt-1 text-sm text-brand-900/60">
+        进行中的任务会显示实时进度；完成后可在成品图库或已完成任务中查看
       </p>
     </header>
 
@@ -67,6 +92,7 @@ const filtered = computed(() => {
         <a
           :href="item.watermarked_result_download_url || item.source_preview_url || '#'"
           target="_blank"
+          :class="{ 'pointer-events-none': showProgress(item) }"
         >
           <CachedImage
             v-if="item.watermarked_result_download_url || item.source_preview_url"
@@ -77,12 +103,30 @@ const filtered = computed(() => {
             :reload-key="reloadKey"
             img-class="aspect-square w-full object-cover"
           />
+          <div
+            v-else-if="showProgress(item)"
+            class="flex aspect-square items-center justify-center bg-cream-100 text-sm text-brand-900/40"
+          >
+            生成中…
+          </div>
         </a>
         <div class="p-3">
           <JobStatusBadge :status="item.status" />
+          <template v-if="showProgress(item)">
+            <el-progress
+              class="mt-3"
+              :percentage="progressPercent(item.job_id)"
+              :stroke-width="8"
+            />
+            <p class="mt-2 text-xs text-brand-900/60">
+              {{ progressMessage(item.job_id) }}
+            </p>
+          </template>
           <p class="mt-2 truncate text-xs text-brand-900/50">{{ item.job_id }}</p>
           <p class="text-xs text-brand-900/40">{{ new Date(item.created_at).toLocaleString() }}</p>
-          <p v-if="item.error_message" class="mt-1 text-xs text-red-700">{{ item.error_message }}</p>
+          <p v-if="item.error_message && item.status === 'failed'" class="mt-1 text-xs text-red-700">
+            {{ item.error_message }}
+          </p>
           <el-button
             v-if="item.status === 'succeeded'"
             link

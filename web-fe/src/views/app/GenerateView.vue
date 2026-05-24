@@ -1,39 +1,28 @@
 <script setup lang="ts">
 import { onActivated, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import CachedImage from '@/components/CachedImage.vue'
 import { useGenerationStore } from '@/stores/generation'
 import { useUserStore } from '@/stores/user'
 
+const router = useRouter()
 const gen = useGenerationStore()
 const userStore = useUserStore()
 const fileInput = ref<HTMLInputElement | null>(null)
-const previewTab = ref<'watermark' | 'raw' | 'source'>('source')
 const privacyChecked = ref(false)
 
-function initGeneratePage() {
+async function bootstrapGeneratePage() {
   gen.prepareGeneratePage()
-  previewTab.value = 'source'
   if (fileInput.value) {
     fileInput.value.value = ''
   }
-}
-
-async function bootstrapGeneratePage() {
-  initGeneratePage()
   await gen.loadCatalogs()
   privacyChecked.value = userStore.hasPrivacyAgreement
 }
 
 onMounted(bootstrapGeneratePage)
-onActivated(initGeneratePage)
-
-function resetAndStartOver() {
-  gen.resetForNewTask()
-  previewTab.value = 'source'
-  if (fileInput.value) {
-    fileInput.value.value = ''
-  }
-}
+onActivated(bootstrapGeneratePage)
 
 function pickFile() {
   fileInput.value?.click()
@@ -56,11 +45,17 @@ async function acceptPrivacy() {
   privacyChecked.value = true
 }
 
-const previewUrl = () => {
-  const job = gen.currentJob
-  if (previewTab.value === 'source') return gen.sourcePreviewUrl
-  if (previewTab.value === 'raw') return job?.raw_result_download_url
-  return job?.watermarked_result_download_url || gen.sourcePreviewUrl
+async function submitGeneration() {
+  try {
+    await gen.startGeneration()
+    ElMessage.success({
+      message: '任务已提交，请在「生成任务」查看进度',
+      duration: 4000,
+    })
+    router.push('/app/works/tasks')
+  } catch {
+    /* errorMessage 已在 store */
+  }
 }
 </script>
 
@@ -69,6 +64,7 @@ const previewUrl = () => {
     <header class="mb-6">
       <p class="eyebrow">NEW GENERATION</p>
       <h1 class="text-2xl font-bold">创建商品图任务</h1>
+      <p class="mt-1 text-sm text-brand-900/60">提交后本页会清空，进度请在「生成任务」查看</p>
     </header>
 
     <div class="flex flex-col gap-6 xl:flex-row">
@@ -194,71 +190,27 @@ const previewUrl = () => {
           size="large"
           :disabled="!gen.canGenerate"
           :loading="gen.busy"
-          @click="gen.startGeneration()"
+          @click="submitGeneration"
         >
           开始 AI 生成
         </el-button>
         <p class="text-center text-xs text-brand-900/50">{{ gen.statusMessage }}</p>
-        <el-progress v-if="gen.stage === 'generating'" :percentage="gen.progress" />
         <el-alert v-if="gen.errorMessage" :title="gen.errorMessage" type="error" show-icon />
-        <el-button
-          v-if="gen.isGenerationFinished"
-          class="w-full"
-          @click="resetAndStartOver"
-        >
-          开始新任务
-        </el-button>
       </div>
 
       <div class="page-card min-h-[480px] flex-1 p-4">
-        <div class="mb-3 flex items-center justify-between">
-          <p class="font-semibold">Smart Preview</p>
-          <el-radio-group v-model="previewTab" size="small">
-            <el-radio-button value="source">源图</el-radio-button>
-            <el-radio-button value="watermark" :disabled="!gen.hasResult">水印</el-radio-button>
-            <el-radio-button value="raw" :disabled="!gen.currentJob?.raw_result_download_url">
-              原图
-            </el-radio-button>
-          </el-radio-group>
-        </div>
+        <p class="mb-3 font-semibold">上传预览</p>
         <div
           class="flex min-h-[400px] items-center justify-center overflow-hidden rounded-xl bg-cream-100"
         >
           <CachedImage
-            v-if="previewUrl()"
-            :src="previewUrl()"
-            :job-id="gen.currentJob?.job_id"
-            :image-role="previewTab === 'source' ? 'source' : previewTab === 'raw' ? 'raw' : 'watermark'"
-            :cache-key="previewTab === 'source' && !gen.currentJob?.job_id ? `upload:${gen.sourceAssets[gen.activeSourcePreviewIndex]?.asset_id}` : undefined"
+            v-if="gen.sourcePreviewUrl"
+            :src="gen.sourcePreviewUrl"
+            :cache-key="`upload:${gen.sourceAssets[gen.activeSourcePreviewIndex]?.asset_id}`"
             img-class="max-h-[70vh] max-w-full object-contain"
             alt="preview"
           />
           <p v-else class="text-sm text-brand-900/40">上传图片后在此预览</p>
-        </div>
-        <div v-if="gen.hasResult" class="mt-4 flex flex-wrap gap-2">
-          <a
-            v-if="gen.currentJob?.watermarked_result_download_url"
-            :href="gen.currentJob.watermarked_result_download_url"
-            target="_blank"
-            class="btn-primary text-sm"
-          >
-            下载水印图
-          </a>
-          <a
-            v-if="gen.currentJob?.raw_result_download_url"
-            :href="gen.currentJob.raw_result_download_url"
-            target="_blank"
-            class="rounded-xl border px-4 py-2 text-sm"
-          >
-            下载原图
-          </a>
-          <router-link
-            v-if="gen.currentJob?.job_id"
-            :to="{ name: 'app-work-detail', params: { jobId: gen.currentJob.job_id } }"
-            class="rounded-xl border border-brand-700/20 px-4 py-2 text-sm text-brand-700"
-          >
-            查看任务详情
-          </router-link>
         </div>
       </div>
     </div>
