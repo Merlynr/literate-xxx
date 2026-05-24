@@ -53,40 +53,55 @@ alembic upgrade head
 
 ```bash
 cd /opt/xxzx/deploy
-sudo bash start_backend.sh start    # 启动
+sudo bash start_backend.sh start    # 启动 API + Worker + Beat
 sudo bash start_backend.sh stop     # 停止
 sudo bash start_backend.sh restart  # 重启
-sudo bash start_backend.sh status   # 查看状态
+sudo bash start_backend.sh status   # 查看状态（含 Beat）
 ```
+
+脚本方式会同时启动 Beat（`start_celery_beat`）。若已用 systemd 管理，请勿再用脚本启动，避免重复进程。
 
 ### 方式二：使用 systemd (推荐生产环境)
 
 ```bash
 cd /opt/xxzx/deploy
 
-# 复制服务文件
-sudo cp xxzx-backend.service /etc/systemd/system/
-sudo cp xxzx-celery.service /etc/systemd/system/
+# 一键安装三个 unit（路径会按当前代码目录替换 /opt/xxzx）
+sudo bash install_systemd.sh
 
-# 重载 systemd
-sudo systemctl daemon-reload
+# 若不用 install_systemd.sh，可手动复制后 sed 改路径：
+# sudo cp xxzx-backend.service xxzx-celery.service xxzx-celery-beat.service /etc/systemd/system/
+# sudo systemctl daemon-reload
 
-# 启动服务
-sudo systemctl start xxzx-backend
-sudo systemctl start xxzx-celery
+# 先停掉 nohup 脚本起的进程，避免重复
+sudo bash start_backend.sh stop
 
-# 设置开机自启
-sudo systemctl enable xxzx-backend
-sudo systemctl enable xxzx-celery
+# 启动（API + Worker + Beat）
+sudo systemctl start xxzx-backend xxzx-celery xxzx-celery-beat
+
+# 开机自启（install_systemd.sh 已 enable，可跳过）
+sudo systemctl enable xxzx-backend xxzx-celery xxzx-celery-beat
 
 # 查看状态
-sudo systemctl status xxzx-backend
-sudo systemctl status xxzx-celery
+sudo systemctl status xxzx-backend xxzx-celery xxzx-celery-beat
 
 # 查看日志
 sudo journalctl -u xxzx-backend -f
 sudo journalctl -u xxzx-celery -f
+sudo journalctl -u xxzx-celery-beat -f
+# 或文件：tail -f /var/log/xxzx/celery_beat.log
 ```
+
+**Celery Beat 说明**
+
+| 进程 | 作用 |
+|------|------|
+| `xxzx-celery` | 执行生成任务（Worker） |
+| `xxzx-celery-beat` | 每 5 分钟触发 `generation.reconcile`，无人 poll 时也能恢复卡住任务 |
+
+**全集群只运行 1 个 Beat 实例**（不要多台机器各起一个 Beat）。
+
+Beat 调度已在 `python-bff/app/workers/celery_app.py` 的 `beat_schedule` 中配置，无需改代码。
 
 ## 6. 配置 Nginx 反向代理 (可选)
 

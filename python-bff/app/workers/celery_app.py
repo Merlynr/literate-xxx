@@ -23,6 +23,12 @@ celery_app.conf.update(
     task_max_retries=3,
     broker_transport_options={"visibility_timeout": 3600},
     worker_prefetch_multiplier=1,
+    beat_schedule={
+        "generation-reconcile-stale-jobs": {
+            "task": "generation.reconcile",
+            "schedule": 300.0,
+        },
+    },
 )
 
 celery_app.autodiscover_tasks(["app.workers"])

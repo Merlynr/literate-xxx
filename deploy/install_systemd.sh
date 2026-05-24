@@ -31,15 +31,22 @@ render_unit() {
 
 render_unit "${DEPLOY_DIR}/xxzx-backend.service" /etc/systemd/system/xxzx-backend.service
 render_unit "${DEPLOY_DIR}/xxzx-celery.service" /etc/systemd/system/xxzx-celery.service
+render_unit "${DEPLOY_DIR}/xxzx-celery-beat.service" /etc/systemd/system/xxzx-celery-beat.service
 
-chmod +x "${DEPLOY_DIR}/run_backend.sh" "${DEPLOY_DIR}/run_celery.sh" "${DEPLOY_DIR}/lib/env.sh"
+chmod +x \
+  "${DEPLOY_DIR}/run_backend.sh" \
+  "${DEPLOY_DIR}/run_celery.sh" \
+  "${DEPLOY_DIR}/run_celery_beat.sh" \
+  "${DEPLOY_DIR}/lib/env.sh"
 strip_env_bom "${BACKEND_DIR}/.env"
 
 systemctl daemon-reload
-systemctl enable xxzx-backend xxzx-celery
+systemctl enable xxzx-backend xxzx-celery xxzx-celery-beat
 
 echo "Installed systemd units for project root: ${PROJECT_ROOT}"
 echo "Next:"
 echo "  sudo bash ${DEPLOY_DIR}/start_backend.sh stop   # stop cron/nohup instances"
-echo "  sudo systemctl start xxzx-backend xxzx-celery"
-echo "  sudo systemctl status xxzx-backend xxzx-celery"
+echo "  sudo systemctl start xxzx-backend xxzx-celery xxzx-celery-beat"
+echo "  sudo systemctl status xxzx-backend xxzx-celery xxzx-celery-beat"
+echo ""
+echo "Note: run only ONE xxzx-celery-beat instance cluster-wide."

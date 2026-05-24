@@ -11,6 +11,14 @@ from loguru import logger
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting {} v{}", settings.PROJECT_NAME, settings.VERSION)
+    try:
+        from app.services.job_reconciliation import recover_stale_jobs_session
+
+        stats = await recover_stale_jobs_session(trigger="bff_startup")
+        if stats.get("requeued") or stats.get("failed"):
+            logger.info("Recovered stale generation jobs on startup: {}", stats)
+    except Exception as exc:
+        logger.warning("Generation job startup recovery skipped: {}", exc)
     yield
     logger.info("Shutting down...")
     await engine.dispose()

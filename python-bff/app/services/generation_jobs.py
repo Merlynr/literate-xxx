@@ -24,6 +24,12 @@ from app.workers.celery_app import celery_app
 MAX_SOURCE_ASSETS = 6
 
 
+def dispatch_generation_job(job: GenerationJob) -> str:
+    result = celery_app.send_task("generation.process", kwargs={"job_id": str(job.id)})
+    job.task_id = result.id
+    return result.id
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
@@ -283,8 +289,7 @@ async def create_generation_job(
                 detail="client_request_id already exists with different payload",
             )
         if schedule_task and not existing.task_id:
-            result = celery_app.send_task("generation.process", kwargs={"job_id": str(existing.id)})
-            existing.task_id = result.id
+            dispatch_generation_job(existing)
             await record_job_event(
                 db,
                 tenant_id=tenant_id,
@@ -363,8 +368,7 @@ async def create_generation_job(
     await db.refresh(job)
 
     if schedule_task:
-        result = celery_app.send_task("generation.process", kwargs={"job_id": str(job.id)})
-        job.task_id = result.id
+        dispatch_generation_job(job)
 
     await record_job_event(
         db,

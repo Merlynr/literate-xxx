@@ -1,0 +1,18 @@
+[Unit]
+Description=XX甄选 - Celery Beat (generation job reconciliation)
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/xxzx/python-bff
+Environment="PYTHONPATH=/opt/xxzx/python-bff"
+ExecStart=/opt/xxzx/deploy/run_celery_beat.sh
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/xxzx/celery_beat.log
+StandardError=append:/var/log/xxzx/celery_beat.log
+
+[Install]
+WantedBy=multi-user.target

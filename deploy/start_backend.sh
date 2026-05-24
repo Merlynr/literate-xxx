@@ -4,7 +4,7 @@ set -euo pipefail
 # ============================================================
 # XX甄选 - Backend Startup Script (CentOS 8)
 # ============================================================
-# 启动 FastAPI 后端 + Celery Worker
+# 启动 FastAPI 后端 + Celery Worker + Celery Beat（定时 reconciliation）
 # 用法: sudo bash start_backend.sh [start|stop|restart|status]
 # ============================================================
 
@@ -389,7 +389,7 @@ start_services() {
 
     start_backend
     start_celery_worker
-    # start_celery_beat  # 如需定时任务，取消此行注释
+    start_celery_beat
 }
 
 # 完整启动 (含环境检查，用于首次 start)
@@ -417,6 +417,7 @@ start_all() {
     log_step "  后端 API:    http://localhost:${PORT}"
     log_step "  API 文档:    http://localhost:${PORT}/docs"
     log_step "  健康检查:    http://localhost:${PORT}/api/v1/health"
+    log_step "  Celery Beat: 每 5 分钟扫 queued/超时 running（日志 ${CELERY_BEAT_LOG}）"
     log_step "  应用日志:    ${LOG_DIR}"
     log_step "  启动日志:    ${STARTUP_LOG}"
     log_step "=========================================="
@@ -496,10 +497,17 @@ watchdog() {
         need_restart=true
     fi
 
+    # 检查 Celery Beat（定时 reconciliation）
+    if ! is_running "${CELERY_BEAT_PID}"; then
+        log_warn "[watchdog] Celery Beat 未运行"
+        need_restart=true
+    fi
+
     if [[ "${need_restart}" == true ]]; then
         log_info "[watchdog] 执行重启..."
 
         # 停止
+        stop_service "Celery Beat" "${CELERY_BEAT_PID}"
         stop_service "Celery Worker" "${CELERY_PID}"
         stop_service "FastAPI 后端" "${BACKEND_PID}"
         force_stop_all

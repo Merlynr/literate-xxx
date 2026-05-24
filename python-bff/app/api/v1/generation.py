@@ -15,11 +15,12 @@ from app.services.generation_jobs import (
     MAX_SOURCE_ASSETS,
     confirm_generation_asset,
     create_generation_job,
+    dispatch_generation_job,
     generation_asset_download_url,
     get_generation_job,
     record_job_event,
 )
-from app.workers.celery_app import celery_app
+from app.services.job_reconciliation import maybe_recover_job
 
 router = APIRouter()
 
@@ -221,8 +222,7 @@ async def create_job(
             detail=str(exc),
         ) from exc
     await db.commit()
-    result = celery_app.send_task("generation.process", kwargs={"job_id": str(job.id)})
-    job.task_id = result.id
+    dispatch_generation_job(job)
     db.add(job)
     await record_job_event(
         db,
@@ -259,6 +259,12 @@ async def read_job(
     job = await get_generation_job(db, tenant_id=tenant_id, job_id=job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
+
+    recovery_action = await maybe_recover_job(db, job, trigger="poll")
+    if recovery_action:
+        await db.commit()
+        await db.refresh(job)
+
     if job.raw_result_asset_id:
         raw_asset = await db.get(GenerationAsset, job.raw_result_asset_id)
         if raw_asset and raw_asset.tenant_id == tenant_id:

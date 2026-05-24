@@ -176,6 +176,29 @@ export const useGenerationStore = defineStore('generation', () => {
       latest = await getJob(jobId, { skipCache: true })
       attempts += 1
     }
+
+    if (latest.status !== 'succeeded' && latest.status !== 'failed') {
+      statusMessage.value = '任务仍在处理中，系统已自动重试排队，继续等待…'
+      let extraAttempts = 0
+      while (
+        extraAttempts < 30 &&
+        latest.status !== 'succeeded' &&
+        latest.status !== 'failed'
+      ) {
+        progress.value = Math.min(98, 80 + extraAttempts)
+        statusMessage.value =
+          latest.status === 'running'
+            ? 'AI 正在生成中，请稍候…'
+            : '仍在排队，系统会自动重试…'
+        await wait(3000)
+        latest = await getJob(jobId, { skipCache: true })
+        extraAttempts += 1
+      }
+    }
+
+    if (latest.status !== 'succeeded' && latest.status !== 'failed') {
+      statusMessage.value = '任务仍在处理中，可稍后在「我的作品」查看结果'
+    }
     return latest
   }
 
@@ -207,6 +230,9 @@ export const useGenerationStore = defineStore('generation', () => {
       } else if (latest.status === 'failed') {
         stage.value = 'failed'
         errorMessage.value = latest.error_message || '生成失败'
+      } else {
+        stage.value = 'generating'
+        progress.value = Math.min(progress.value, 98)
       }
       await loadHistory({ force: true })
       return latest
