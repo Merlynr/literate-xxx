@@ -4,6 +4,10 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    // element-plus → @vueuse 在 Rolldown 下可能打 INVALID_ANNOTATION 警告，可忽略
+    chunkSizeWarningLimit: 1200,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

@@ -24,3 +24,10 @@ npm run dev
 默认 `VITE_API_BASE_URL=http://8.141.7.56:8000/api/v1`。
 
 若改回本地代理，在 `.env.development` 写 `VITE_API_BASE_URL=/api/v1`（`vite.config.ts` 里 proxy 指向同一台 BFF）。
+
+## 构建时的 Rolldown 提示
+
+`npm run build` 若出现 `@vueuse/core` 的 `[INVALID_ANNOTATION] /* #__PURE__ */`，来自 **Vite 8 + Element Plus 间接依赖**，一般是**警告**，不是失败。
+
+- 只要最后有 **`✓ built`** 且存在 **`dist/index.html`**，即可正常 `rsync` 部署。
+- 另有一条 **chunk > 500kB** 提示，也不影响使用。
