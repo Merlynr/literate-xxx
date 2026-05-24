@@ -2,15 +2,31 @@
 
 load_env_file() {
     local env_file="$1"
+    local line key value
+
     if [[ ! -f "${env_file}" ]]; then
         echo "Missing env file: ${env_file}" >&2
         return 1
     fi
 
     set -a
-    # Strip UTF-8 BOM and CRLF so Windows-edited .env files work under systemd/bash.
-    # shellcheck disable=SC1090
-    source <(sed '1s/^\xEF\xBB\xBF//' "${env_file}" | tr -d '\r')
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="${line%$'\r'}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "${line}" || "${line}" == \#* ]] && continue
+
+        if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            if [[ "${value}" =~ ^\".*\"$ ]]; then
+                value="${value:1:${#value}-2}"
+            elif [[ "${value}" =~ ^\'.*\'$ ]]; then
+                value="${value:1:${#value}-2}"
+            fi
+            printf -v "${key}" '%s' "${value}"
+            export "${key}"
+        fi
+    done < <(sed '1s/^\xEF\xBB\xBF//' "${env_file}")
     set +a
 }
 
